@@ -166,7 +166,6 @@ export function App() {
     uploadedFileName: string,
     rawCsv: string
   ) => {
-    // 期間選択・重複排除確認モーダルを開く
     setPendingImport({
       rawRecords: loadedRecords,
       fileName: uploadedFileName,
@@ -197,9 +196,7 @@ export function App() {
       }
     } else {
       // 2. 既存データに追加モード（重複排除付き）
-      // まずルールを適用
       const { updatedRecords: incomingWithRules } = applyRulesToRecords(selectedRecords, rules, false);
-      // 重複排除してマージ
       const { mergedRecords, addedCount, duplicateCount } = mergeAndDeduplicateRecords(
         records,
         incomingWithRules
@@ -218,6 +215,34 @@ export function App() {
     }
 
     setPendingImport(null);
+  };
+
+  // 全データ一括バックアップからの完全復元ハンドラ
+  const handleRestoreFullBackup = (backupData: {
+    records: MoneyForwardRecord[];
+    rules: AutoRule[];
+    settings: AppSettings;
+    fileName: string | null;
+    selectedPeriod: string;
+  }) => {
+    setRecords(backupData.records);
+    setRules(backupData.rules);
+    setSettings(backupData.settings);
+    setFileName(backupData.fileName);
+    setSelectedPeriod(backupData.selectedPeriod || 'ALL');
+    setFilters(DEFAULT_FILTERS);
+
+    // ストレージにも即時反映
+    saveStoredData({
+      records: backupData.records,
+      fileName: backupData.fileName,
+      rawCsvContent: '',
+      selectedPeriod: backupData.selectedPeriod,
+    });
+    saveRules(backupData.rules);
+    saveSettings(backupData.settings);
+
+    showToast('success', `全データ（${backupData.records.length} 件の明細 + ルール + 設定）を完全復元しました！`);
   };
 
   // 1. 期間で絞り込まれたレコード
@@ -264,10 +289,9 @@ export function App() {
       return;
     }
 
-    // 削除対象以外のレコードを残す
     let remainingRecords: MoneyForwardRecord[] = [];
     if (period.startsWith('MONTH:')) {
-      const targetMonth = period.replace('MONTH:', ''); // '2026-08'
+      const targetMonth = period.replace('MONTH:', '');
       remainingRecords = records.filter((r) => {
         const match = r.date.match(/^(\d{4})[/-](\d{1,2})/);
         if (!match) return true;
@@ -275,7 +299,7 @@ export function App() {
         return ym !== targetMonth;
       });
     } else if (period.startsWith('YEAR:')) {
-      const targetYear = period.replace('YEAR:', ''); // '2026'
+      const targetYear = period.replace('YEAR:', '');
       remainingRecords = records.filter((r) => {
         const match = r.date.match(/^(\d{4})/);
         if (!match) return true;
@@ -419,7 +443,10 @@ export function App() {
       {/* メインコンテンツ */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {records.length === 0 ? (
-          <FileUploader onDataLoaded={handleDataLoaded} />
+          <FileUploader
+            onDataLoaded={handleDataLoaded}
+            onRestoreBackup={handleRestoreFullBackup}
+          />
         ) : (
           <div className="space-y-6 animate-fadeIn">
             {/* 年月・期間セレクター */}
@@ -465,6 +492,11 @@ export function App() {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onSaveSettings={handleSaveSettings}
+        currentRecords={records}
+        currentRules={rules}
+        currentFileName={fileName}
+        currentSelectedPeriod={selectedPeriod}
+        onRestoreFullBackup={handleRestoreFullBackup}
       />
 
       <RuleModal

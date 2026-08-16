@@ -1,17 +1,25 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, Database } from 'lucide-react';
 import { decodeCsvBuffer, parseMoneyForwardCsv } from '../utils/csvParser';
-import { MoneyForwardRecord } from '../types';
+import { MoneyForwardRecord, AppSettings, AutoRule } from '../types';
 
 interface FileUploaderProps {
   onDataLoaded: (records: MoneyForwardRecord[], fileName: string, rawCsv: string) => void;
+  onRestoreBackup?: (backupData: {
+    records: MoneyForwardRecord[];
+    rules: AutoRule[];
+    settings: AppSettings;
+    fileName: string | null;
+    selectedPeriod: string;
+  }) => void;
 }
 
-export const FileUploader: React.FC<FileUploaderProps> = ({ onDataLoaded }) => {
+export const FileUploader: React.FC<FileUploaderProps> = ({ onDataLoaded, onRestoreBackup }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = async (file: File) => {
     if (!file.name.endsWith('.csv') && !file.type.includes('csv') && !file.type.includes('text')) {
@@ -64,6 +72,37 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onDataLoaded }) => {
     if (e.target.files && e.target.files.length > 0) {
       processFile(e.target.files[0]);
     }
+  };
+
+  // バックアップJSON復元
+  const handleBackupFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (!parsed || !Array.isArray(parsed.records)) {
+          throw new Error('有効なバックアップJSONファイルではありません（recordsが見つかりません）');
+        }
+
+        if (onRestoreBackup) {
+          onRestoreBackup({
+            records: parsed.records,
+            rules: Array.isArray(parsed.rules) ? parsed.rules : [],
+            settings: parsed.settings,
+            fileName: parsed.fileName || null,
+            selectedPeriod: parsed.selectedPeriod || 'ALL',
+          });
+        }
+      } catch (err: any) {
+        alert(`バックアップの復元に失敗しました: ${err.message}`);
+      } finally {
+        if (backupFileInputRef.current) backupFileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
   };
 
   // サンプルデータ読み込み用
@@ -151,14 +190,34 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onDataLoaded }) => {
         </div>
       )}
 
-      {/* サンプルデータで試す */}
-      <div className="mt-6 text-center">
+      {/* サブアクション（バックアップ復元 & サンプルデータ） */}
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs">
+        {onRestoreBackup && (
+          <>
+            <input
+              ref={backupFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              onChange={handleBackupFileInputChange}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => backupFileInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+            >
+              <Database className="w-3.5 h-3.5 text-indigo-600" />
+              バックアップJSONから復元
+            </button>
+          </>
+        )}
+
         <button
           type="button"
           onClick={loadSampleData}
-          className="inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium py-1 px-3 rounded-md hover:bg-indigo-50 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900 font-medium py-1.5 px-3 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer border border-slate-200"
         >
-          <FileText className="w-3.5 h-3.5" />
+          <FileText className="w-3.5 h-3.5 text-slate-500" />
           サンプルデータで動作を試す
         </button>
       </div>

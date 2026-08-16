@@ -1,12 +1,35 @@
-import React, { useState } from 'react';
-import { AppSettings } from '../types';
-import { X, Save, Plus, Trash2, ShieldCheck, HelpCircle } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { AppSettings, AutoRule, MoneyForwardRecord } from '../types';
+import {
+  X,
+  Save,
+  Plus,
+  Trash2,
+  ShieldCheck,
+  HelpCircle,
+  Download,
+  Upload,
+  Database,
+  CheckCircle2,
+} from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
   onSaveSettings: (newSettings: AppSettings) => void;
+  // 全データ移行用
+  currentRecords?: MoneyForwardRecord[];
+  currentRules?: AutoRule[];
+  currentFileName?: string | null;
+  currentSelectedPeriod?: string;
+  onRestoreFullBackup?: (backupData: {
+    records: MoneyForwardRecord[];
+    rules: AutoRule[];
+    settings: AppSettings;
+    fileName: string | null;
+    selectedPeriod: string;
+  }) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -14,10 +37,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   settings,
   onSaveSettings,
+  currentRecords = [],
+  currentRules = [],
+  currentFileName = null,
+  currentSelectedPeriod = 'ALL',
+  onRestoreFullBackup,
 }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
   const [newFlagInput, setNewFlagInput] = useState('');
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const [migrationMessage, setMigrationMessage] = useState<string | null>(null);
+
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
@@ -32,7 +63,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleDeleteFlag = (flagToDelete: string) => {
-    if (flagToDelete === '未設定') return; // 未設定は削除不可
+    if (flagToDelete === '未設定') return;
     setLocalSettings({
       ...localSettings,
       customFlags: localSettings.customFlags.filter((f) => f !== flagToDelete),
@@ -48,13 +79,85 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }, 800);
   };
 
+  // 全データ一括バックアップ（JSONエクスポート）
+  const handleExportFullBackup = () => {
+    const backupData = {
+      version: '1.1',
+      timestamp: new Date().toISOString(),
+      recordCount: currentRecords.length,
+      records: currentRecords,
+      rules: currentRules,
+      settings: localSettings,
+      fileName: currentFileName,
+      selectedPeriod: currentSelectedPeriod,
+    };
+
+    const dataStr = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.download = `mf_processor_backup_${currentRecords.length}items_${dateStr}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    setMigrationMessage(`全データ（${currentRecords.length} 件の明細 + ルール + 設定）を保存しました`);
+    setTimeout(() => setMigrationMessage(null), 4000);
+  };
+
+  // 全データ一括復元（JSONインポート）
+  const handleImportFullBackupChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (!parsed || !Array.isArray(parsed.records)) {
+          throw new Error('有効なバックアップJSONファイルではありません（records配列が見つかりません）');
+        }
+
+        const count = parsed.records.length;
+        const confirmMsg = `【バックアップの復元】\n\n・明細データ: ${count} 件\n・自動ルール: ${
+          parsed.rules?.length || 0
+        } 件\n・ファイル名: ${parsed.fileName || 'なし'}\n\nこのデータを復元して現在の状態を上書きしますか？`;
+
+        if (!confirm(confirmMsg)) return;
+
+        if (onRestoreFullBackup) {
+          onRestoreFullBackup({
+            records: parsed.records,
+            rules: Array.isArray(parsed.rules) ? parsed.rules : [],
+            settings: parsed.settings || localSettings,
+            fileName: parsed.fileName || null,
+            selectedPeriod: parsed.selectedPeriod || 'ALL',
+          });
+        }
+
+        setLocalSettings(parsed.settings || localSettings);
+        setMigrationMessage(`${count} 件のデータを完全復元しました！`);
+        setTimeout(() => {
+          setMigrationMessage(null);
+          onClose();
+        }, 1200);
+      } catch (err: any) {
+        alert(`復元に失敗しました: ${err.message}`);
+      } finally {
+        if (backupFileInputRef.current) backupFileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* ヘッダー */}
         <div className="p-4 sm:p-6 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-slate-800">アプリ設定</h2>
+            <h2 className="text-base font-bold text-slate-800">アプリ設定 & データ移行</h2>
           </div>
           <button
             type="button"
@@ -67,6 +170,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* コンテンツ */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+          {/* 全データ一括移行・バックアップ */}
+          <div className="p-4 bg-gradient-to-br from-indigo-50/80 to-purple-50/80 border border-indigo-200/80 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-indigo-950 font-bold">
+                <Database className="w-4 h-4 text-indigo-600" />
+                <span>全データ一括移行・バックアップ (JSON)</span>
+              </div>
+              <span className="text-[11px] font-semibold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
+                現在のデータ: {currentRecords.length} 件
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              ローカルサーバーからGitHub Pagesへデータを移行したい時や、PC間で作業を引き継ぐ際に使用します。
+              <strong>明細データ（フラグ・メモ付き）、自動ルール、GAS設定</strong> を丸ごと1ファイルで保存・復元できます。
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <input
+                ref={backupFileInputRef}
+                type="file"
+                accept=".json,application/json"
+                onChange={handleImportFullBackupChange}
+                className="hidden"
+              />
+
+              <button
+                type="button"
+                onClick={handleExportFullBackup}
+                disabled={currentRecords.length === 0}
+                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold rounded-lg transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                title="現在の全作業データをJSONファイルとしてダウンロード"
+              >
+                <Download className="w-3.5 h-3.5" />
+                全データをバックアップ (エクスポート)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => backupFileInputRef.current?.click()}
+                className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 font-bold border border-slate-300 rounded-lg transition-colors cursor-pointer shadow-2xs flex items-center gap-1.5"
+                title="バックアップJSONファイルからすべてのデータを完全復元"
+              >
+                <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                バックアップから復元 (インポート)
+              </button>
+            </div>
+
+            {migrationMessage && (
+              <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg flex items-center gap-1.5 text-xs font-semibold animate-fadeIn">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{migrationMessage}</span>
+              </div>
+            )}
+          </div>
+
           {/* GAS WebアプリURL */}
           <div className="space-y-1.5">
             <label className="block font-bold text-slate-700">
