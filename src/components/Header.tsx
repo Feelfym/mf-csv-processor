@@ -1,5 +1,15 @@
 import React from 'react';
-import { Settings, Sparkles, Download, CloudUpload, FileSpreadsheet, RefreshCw, CheckCircle2, PlusCircle } from 'lucide-react';
+import {
+  Settings,
+  Sparkles,
+  Download,
+  CloudUpload,
+  FileSpreadsheet,
+  RefreshCw,
+  CheckCircle2,
+  PlusCircle,
+  BookOpen,
+} from 'lucide-react';
 
 interface HeaderProps {
   fileName: string | null;
@@ -10,6 +20,7 @@ interface HeaderProps {
   onSaveToGas: () => void;
   onReset: () => void;
   onOpenImportCsv?: () => void;
+  onOpenNotebookLmExport?: () => void;
   isSaving: boolean;
   hasGasUrl: boolean;
   lastSavedTime?: string | null;
@@ -24,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSaveToGas,
   onReset,
   onOpenImportCsv,
+  onOpenNotebookLmExport,
   isSaving,
   hasGasUrl,
 }) => {
@@ -39,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-slate-800 tracking-tight">MF CSV Processor</h1>
               <span className="text-xs bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full">
-                v1.1
+                v1.2
               </span>
               {fileName && (
                 <span className="hidden md:inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
@@ -73,11 +85,23 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
+              {onOpenNotebookLmExport && (
+                <button
+                  type="button"
+                  onClick={onOpenNotebookLmExport}
+                  title="NotebookLM用にMarkdownレポートを生成・コピー"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-800 bg-indigo-100/70 hover:bg-indigo-200/80 rounded-lg transition-colors cursor-pointer shadow-2xs border border-indigo-200"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-indigo-700" />
+                  <span>NotebookLM搬出</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onReset}
                 title="編集データをクリアして最初からやり直す"
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 クリア

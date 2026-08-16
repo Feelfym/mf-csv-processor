@@ -30,6 +30,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { RuleModal } from './components/RuleModal';
 import { ShortcutHelpModal } from './components/ShortcutHelpModal';
 import { ImportModal } from './components/ImportModal';
+import { NotebookLmExportModal } from './components/NotebookLmExportModal';
 import { CheckCircle, AlertTriangle } from 'lucide-react';
 
 export function App() {
@@ -59,6 +60,7 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
+  const [isNotebookLmModalOpen, setIsNotebookLmModalOpen] = useState(false);
 
   // 通信状態
   const [isSaving, setIsSaving] = useState(false);
@@ -255,6 +257,13 @@ export function App() {
     return applyFiltersToRecords(periodFilteredRecords, filters);
   }, [periodFilteredRecords, filters]);
 
+  // 現在の期間ラベル
+  const currentPeriodLabel = useMemo(() => {
+    const periodOptions = getAvailablePeriods(records);
+    const found = periodOptions.find((p) => p.value === selectedPeriod);
+    return found ? found.label : '全期間';
+  }, [records, selectedPeriod]);
+
   // 明細の個別更新
   const handleUpdateRecord = (id: string, updates: Partial<MoneyForwardRecord>) => {
     setRecords((prev) =>
@@ -436,6 +445,7 @@ export function App() {
         onSaveToGas={handleSaveToGas}
         onReset={handleReset}
         onOpenImportCsv={() => hiddenFileInputRef.current?.click()}
+        onOpenNotebookLmExport={() => setIsNotebookLmModalOpen(true)}
         isSaving={isSaving}
         hasGasUrl={Boolean(settings.gasWebAppUrl)}
       />
@@ -522,6 +532,22 @@ export function App() {
           fileName={pendingImport.fileName}
           existingCount={records.length}
           onConfirmImport={handleConfirmImport}
+        />
+      )}
+
+      {/* NotebookLM用レポート搬出モーダル */}
+      {isNotebookLmModalOpen && (
+        <NotebookLmExportModal
+          isOpen={isNotebookLmModalOpen}
+          onClose={() => setIsNotebookLmModalOpen(false)}
+          records={fullyFilteredRecords}
+          periodLabel={currentPeriodLabel}
+          customFlags={settings.customFlags}
+          notebookLmUrl={settings.notebookLmUrl}
+          onOpenSettings={() => {
+            setIsNotebookLmModalOpen(false);
+            setIsSettingsOpen(true);
+          }}
         />
       )}
 

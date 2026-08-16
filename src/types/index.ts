@@ -31,6 +31,7 @@ export interface AutoRule {
 export interface AppSettings {
   gasWebAppUrl: string;
   googleDriveFolderId: string;
+  notebookLmUrl?: string; // NotebookLMの特定のノートブックURL
   customFlags: string[];
 }
 

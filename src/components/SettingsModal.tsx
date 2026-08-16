@@ -266,6 +266,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
           </div>
 
+          {/* NotebookLM ノートブックURL */}
+          <div className="space-y-1.5">
+            <label className="block font-bold text-slate-700">
+              NotebookLM ノートブックURL（連携先・任意）
+            </label>
+            <input
+              type="text"
+              placeholder="https://notebooklm.google.com/notebook/XXXXX"
+              value={localSettings.notebookLmUrl || ''}
+              onChange={(e) =>
+                setLocalSettings({ ...localSettings, notebookLmUrl: e.target.value.trim() })
+              }
+              className="w-full py-2 px-3 bg-slate-50 focus:bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono text-[11px]"
+            />
+            <p className="text-[11px] text-slate-400 flex items-center gap-1">
+              <HelpCircle className="w-3.5 h-3.5" />
+              登録すると「NotebookLM搬出」時に1クリックで対象ノートブックを直接開けるようになります。
+            </p>
+          </div>
+
           {/* 独自フラグの管理 */}
           <div className="space-y-2 pt-2 border-t border-slate-200">
             <label className="block font-bold text-slate-700">
