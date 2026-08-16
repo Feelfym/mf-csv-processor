@@ -1,13 +1,18 @@
 import React from 'react';
 import { MoneyForwardRecord } from '../types';
-import { TrendingDown, TrendingUp, Tag, Layers } from 'lucide-react';
+import { TrendingDown, TrendingUp, Tag, Layers, CheckCheck } from 'lucide-react';
 
 interface SummaryCardsProps {
   records: MoneyForwardRecord[];
   customFlags: string[];
+  onMarkAsSettled?: (count: number, sum: number) => void;
 }
 
-export const SummaryCards: React.FC<SummaryCardsProps> = ({ records, customFlags }) => {
+export const SummaryCards: React.FC<SummaryCardsProps> = ({
+  records,
+  customFlags,
+  onMarkAsSettled,
+}) => {
   // 計算対象かつ振替ではない支出
   const validExpenses = records.filter(
     (r) => r.calculationTarget && !r.transfer && r.amount < 0
@@ -125,28 +130,62 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({ records, customFlags
 
       {/* フラグ別の小計タグ・バッジ（清算対象などの合計） */}
       {flagSummaries.length > 0 && (
-        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex flex-wrap items-center gap-3">
-          <span className="text-xs font-semibold text-slate-500 shrink-0 flex items-center gap-1">
-            <Tag className="w-3 h-3" /> フラグ別小計:
-          </span>
-          <div className="flex flex-wrap gap-2">
-            {flagSummaries.map((item) => (
-              <div
-                key={item.flag}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
-              >
-                <span className="font-semibold text-slate-900">{item.flag}</span>
-                <span className="font-bold text-indigo-600">
-                  ¥{item.sum.toLocaleString()}
-                </span>
-                {item.discountSum > 0 && (
-                  <span className="text-[10px] text-emerald-600 font-medium">
-                    (支出: ¥{item.expenseSum.toLocaleString()} / 割引・返金: -¥{item.discountSum.toLocaleString()})
-                  </span>
-                )}
-                <span className="text-[10px] text-slate-400">({item.count}件)</span>
-              </div>
-            ))}
+        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-semibold text-slate-500 shrink-0 flex items-center gap-1">
+              <Tag className="w-3 h-3" /> フラグ別小計:
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {flagSummaries.map((item) => {
+                const isSettlementTarget = item.flag === '清算対象' || item.flag === '精算対象';
+                const isSettled = item.flag === '清算済み' || item.flag === '精算済み';
+
+                return (
+                  <div
+                    key={item.flag}
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs ${
+                      isSettlementTarget
+                        ? 'bg-indigo-50/70 border-indigo-300 text-indigo-950 shadow-2xs font-medium'
+                        : isSettled
+                        ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900'
+                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <span className="font-semibold">{item.flag}</span>
+                    <span
+                      className={`font-bold ${
+                        isSettlementTarget
+                          ? 'text-indigo-600 text-sm'
+                          : isSettled
+                          ? 'text-emerald-700'
+                          : 'text-slate-800'
+                      }`}
+                    >
+                      ¥{item.sum.toLocaleString()}
+                    </span>
+                    {item.discountSum > 0 && (
+                      <span className="text-[10px] text-emerald-600 font-medium">
+                        (支出: ¥{item.expenseSum.toLocaleString()} / 割引・返金: -¥{item.discountSum.toLocaleString()})
+                      </span>
+                    )}
+                    <span className="text-[10px] text-slate-400">({item.count}件)</span>
+
+                    {/* 「清算対象」の横に「清算済みにする」一括変更ボタン */}
+                    {isSettlementTarget && onMarkAsSettled && item.count > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => onMarkAsSettled(item.count, item.sum)}
+                        className="ml-1 px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-md transition-all cursor-pointer shadow-2xs flex items-center gap-1"
+                        title="表示中の清算対象レコードを一括で「清算済み」に変更します"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        <span>清算済みにする</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

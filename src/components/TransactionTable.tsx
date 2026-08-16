@@ -256,6 +256,18 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
         return;
       }
 
+      // '3' で「清算済み」に設定
+      if (e.key === '3') {
+        e.preventDefault();
+        if (selectedIds.size > 0) {
+          onBatchUpdateFlag(Array.from(selectedIds), '清算済み');
+          setSelectedIds(new Set());
+        } else if (currentRecord) {
+          onUpdateRecord(currentRecord.id, { customFlag: '清算済み' });
+        }
+        return;
+      }
+
       // '0' または 'u' で「未設定」に戻す
       if (e.key === '0' || e.key.toLowerCase() === 'u') {
         e.preventDefault();
@@ -442,6 +454,18 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                 >
                   <span>清算対象</span>
                   <kbd className="text-[10px] opacity-75 font-mono">1 / s</kbd>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onBatchUpdateFlag(Array.from(selectedIds), '清算済み');
+                    setSelectedIds(new Set());
+                  }}
+                  className="px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors cursor-pointer shadow-2xs flex items-center gap-1"
+                >
+                  <span>清算済み</span>
+                  <kbd className="text-[10px] opacity-75 font-mono">3</kbd>
                 </button>
 
                 <button
@@ -654,6 +678,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                         className={`text-xs font-semibold px-2.5 py-1 rounded-lg border focus:outline-none transition-colors cursor-pointer ${
                           record.customFlag === '清算対象' || record.customFlag === '精算対象'
                             ? 'bg-indigo-50 text-indigo-800 border-indigo-300 shadow-2xs font-bold'
+                            : record.customFlag === '清算済み' || record.customFlag === '精算済み'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
                             : record.customFlag === '除外'
                             ? 'bg-slate-100 text-slate-400 border-slate-300 line-through'
                             : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'

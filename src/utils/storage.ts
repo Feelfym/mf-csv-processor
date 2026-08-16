@@ -6,16 +6,18 @@ const STORAGE_KEYS = {
   SAVED_DATA: 'mf_processor_saved_data',
 };
 
-// 独自フラグは「未設定」「清算対象」「除外」の3種類
+// 独自フラグは「未設定」「清算対象」「清算済み」「除外」の4種類
 export const DEFAULT_FLAGS = [
   '未設定',
   '清算対象',
+  '清算済み',
   '除外',
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
   gasWebAppUrl: '',
   googleDriveFolderId: '',
+  notebookLmUrl: '',
   customFlags: DEFAULT_FLAGS,
 };
 
@@ -45,11 +47,23 @@ export const loadSettings = (): AppSettings => {
     const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw);
+
+    // 既存設定に「清算済み」がなければ自動で追加
+    let flags: string[] = parsed.customFlags && parsed.customFlags.length > 0 ? parsed.customFlags : DEFAULT_FLAGS;
+    if (!flags.includes('清算済み') && !flags.includes('精算済み')) {
+      const idx = flags.indexOf('清算対象');
+      if (idx !== -1) {
+        flags = [...flags.slice(0, idx + 1), '清算済み', ...flags.slice(idx + 1)];
+      } else {
+        flags = [...flags, '清算済み'];
+      }
+    }
+
     return {
       gasWebAppUrl: parsed.gasWebAppUrl || '',
       googleDriveFolderId: parsed.googleDriveFolderId || '',
-      // 「未設定」「清算対象」「除外」の基本フラグを維持
-      customFlags: parsed.customFlags && parsed.customFlags.length > 0 ? parsed.customFlags : DEFAULT_FLAGS,
+      notebookLmUrl: parsed.notebookLmUrl || '',
+      customFlags: flags,
     };
   } catch {
     return DEFAULT_SETTINGS;

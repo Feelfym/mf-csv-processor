@@ -23,6 +23,7 @@ export const ShortcutHelpModal: React.FC<ShortcutHelpModalProps> = ({ isOpen, on
       category: 'フラグ付け & 操作',
       items: [
         { key: '1  または  s', desc: 'フォーカス行（または選択行）を「清算対象」にする' },
+        { key: '3', desc: 'フォーカス行（または選択行）を「清算済み」にする' },
         { key: '2  または  x', desc: 'フォーカス行（または選択行）を「除外」にする' },
         { key: '0  または  u', desc: 'フォーカス行（または選択行）を「未設定」に戻す' },
         { key: 'c', desc: '計算対象（○ / ×）を切り替え' },

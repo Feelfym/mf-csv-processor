@@ -19,6 +19,7 @@ interface NotebookLmExportModalProps {
   customFlags: string[];
   notebookLmUrl?: string;
   onOpenSettings?: () => void;
+  onMarkAsSettled?: () => void;
 }
 
 export const NotebookLmExportModal: React.FC<NotebookLmExportModalProps> = ({
@@ -29,6 +30,7 @@ export const NotebookLmExportModal: React.FC<NotebookLmExportModalProps> = ({
   customFlags,
   notebookLmUrl,
   onOpenSettings,
+  onMarkAsSettled,
 }) => {
   const [includeDetailTable, setIncludeDetailTable] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -175,7 +177,21 @@ export const NotebookLmExportModal: React.FC<NotebookLmExportModalProps> = ({
             .md ファイルで保存
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {onMarkAsSettled && records.some((r) => r.customFlag === '清算対象' || r.customFlag === '精算対象') && (
+              <button
+                type="button"
+                onClick={() => {
+                  onMarkAsSettled();
+                  onClose();
+                }}
+                className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold border border-emerald-300 rounded-xl transition-colors cursor-pointer text-xs"
+                title="表示中の清算対象データをすべて「清算済み」に変更してモーダルを閉じます"
+              >
+                清算対象を「清算済み」に変更
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onClose}

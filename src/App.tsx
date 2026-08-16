@@ -292,6 +292,41 @@ export function App() {
     );
   };
 
+  // 選択中/表示中の「清算対象」を一括で「清算済み」に変更
+  const handleMarkAsSettled = (_count?: number, sum?: number) => {
+    const targetRecords = fullyFilteredRecords.filter(
+      (r) => r.customFlag === '清算対象' || r.customFlag === '精算対象'
+    );
+
+    if (targetRecords.length === 0) {
+      showToast('info', '清算対象の明細がありません');
+      return;
+    }
+
+    const targetIds = new Set(targetRecords.map((r) => r.id));
+    const totalAmount =
+      sum ??
+      targetRecords.reduce(
+        (acc, r) => acc + (r.amount < 0 ? Math.abs(r.amount) : -r.amount),
+        0
+      );
+
+    const periodText = selectedPeriod !== 'ALL' ? `${currentPeriodLabel}の` : '表示中の';
+    if (
+      !confirm(
+        `【清算完了の確認】\n\n・対象件数: ${targetRecords.length} 件\n・対象金額（実質純額）: ¥${totalAmount.toLocaleString()}\n\n${periodText}「清算対象」データをすべて「清算済み」に変更しますか？\n※当月分の清算を完了とし、次回集計から除外します。`
+      )
+    ) {
+      return;
+    }
+
+    setRecords((prev) =>
+      prev.map((r) => (targetIds.has(r.id) ? { ...r, customFlag: '清算済み' } : r))
+    );
+
+    showToast('success', `${targetRecords.length} 件の明細を「清算済み」に変更しました！`);
+  };
+
   // 選択中の期間（月/年）を一括削除
   const handleDeletePeriod = (period: string, label: string, count: number) => {
     if (!confirm(`【確認】\n${label} のデータ（${count} 件）を一括削除してもよろしいですか？\n※この操作は取り消せません。`)) {
@@ -469,7 +504,11 @@ export function App() {
             />
 
             {/* サマリーカード（現在のフィルタ状態に連動） */}
-            <SummaryCards records={fullyFilteredRecords} customFlags={settings.customFlags} />
+            <SummaryCards
+              records={fullyFilteredRecords}
+              customFlags={settings.customFlags}
+              onMarkAsSettled={handleMarkAsSettled}
+            />
 
             {/* カテゴリ & フラグ分析チャート（現在のフィルタ状態に連動 & クリックで絞り込み） */}
             <CategoryChart
@@ -548,6 +587,7 @@ export function App() {
             setIsNotebookLmModalOpen(false);
             setIsSettingsOpen(true);
           }}
+          onMarkAsSettled={handleMarkAsSettled}
         />
       )}
 
