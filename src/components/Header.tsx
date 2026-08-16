@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Sparkles, Download, CloudUpload, FileSpreadsheet, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Settings, Sparkles, Download, CloudUpload, FileSpreadsheet, RefreshCw, CheckCircle2, PlusCircle } from 'lucide-react';
 
 interface HeaderProps {
   fileName: string | null;
@@ -9,6 +9,7 @@ interface HeaderProps {
   onExportCsv: () => void;
   onSaveToGas: () => void;
   onReset: () => void;
+  onOpenImportCsv?: () => void;
   isSaving: boolean;
   hasGasUrl: boolean;
   lastSavedTime?: string | null;
@@ -22,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   onExportCsv,
   onSaveToGas,
   onReset,
+  onOpenImportCsv,
   isSaving,
   hasGasUrl,
 }) => {
@@ -37,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-slate-800 tracking-tight">MF CSV Processor</h1>
               <span className="text-xs bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full">
-                v1.0
+                v1.1
               </span>
               {fileName && (
                 <span className="hidden md:inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
@@ -59,23 +61,35 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-2">
           {fileName && (
             <>
+              {onOpenImportCsv && (
+                <button
+                  type="button"
+                  onClick={onOpenImportCsv}
+                  title="別のCSVを追加または置き換えて読み込む"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-indigo-600" />
+                  <span className="hidden sm:inline">CSV追加取込</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onReset}
-                title="別のCSVファイルを読み込む（データをクリア）"
+                title="編集データをクリアして最初からやり直す"
                 className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                クリア・再読込
+                クリア
               </button>
 
               <button
                 type="button"
                 onClick={onOpenRules}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                自動フラグルール
+                <span className="hidden sm:inline">自動ルール</span>
               </button>
 
               <button

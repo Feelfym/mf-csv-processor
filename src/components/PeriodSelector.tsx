@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { getAvailablePeriods } from '../utils/dateUtils';
 import { MoneyForwardRecord } from '../types';
 
@@ -8,6 +8,7 @@ interface PeriodSelectorProps {
   selectedPeriod: string;
   onSelectPeriod: (period: string) => void;
   filteredCount: number;
+  onDeletePeriod?: (period: string, label: string, count: number) => void;
 }
 
 export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
@@ -15,6 +16,7 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
   selectedPeriod,
   onSelectPeriod,
   filteredCount,
+  onDeletePeriod,
 }) => {
   const periodOptions = useMemo(() => getAvailablePeriods(records), [records]);
 
@@ -25,6 +27,7 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
   );
 
   const currentMonthIndex = monthOptions.findIndex((opt) => opt.value === selectedPeriod);
+  const currentOption = periodOptions.find((opt) => opt.value === selectedPeriod);
 
   const handlePrevMonth = () => {
     if (currentMonthIndex < monthOptions.length - 1) {
@@ -38,6 +41,11 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
     if (currentMonthIndex > 0) {
       onSelectPeriod(monthOptions[currentMonthIndex - 1].value);
     }
+  };
+
+  const handleDelete = () => {
+    if (!onDeletePeriod || !currentOption || selectedPeriod === 'ALL') return;
+    onDeletePeriod(selectedPeriod, currentOption.label, currentOption.count);
   };
 
   return (
@@ -63,6 +71,20 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
                 </option>
               ))}
             </select>
+
+            {/* 選択した月の一括削除ボタン（全期間選択時以外に表示） */}
+            {selectedPeriod !== 'ALL' && onDeletePeriod && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+                title={`${currentOption?.label} のデータを一括削除`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">{currentOption?.label}のデータを削除</span>
+                <span className="md:hidden">削除</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

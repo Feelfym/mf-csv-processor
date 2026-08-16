@@ -1,6 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AutoRule } from '../types';
-import { X, Plus, Trash2, Sparkles, Check, ToggleLeft, ToggleRight } from 'lucide-react';
+import {
+  X,
+  Plus,
+  Trash2,
+  Sparkles,
+  Check,
+  ToggleLeft,
+  ToggleRight,
+  Download,
+  Upload,
+} from 'lucide-react';
 
 interface RuleModalProps {
   isOpen: boolean;
@@ -30,8 +40,16 @@ export const RuleModal: React.FC<RuleModalProps> = ({
   });
   const [overwrite, setOverwrite] = useState(false);
   const [showAppliedToast, setShowAppliedToast] = useState(false);
+  const [messageToast, setMessageToast] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
+
+  const showMsg = (msg: string) => {
+    setMessageToast(msg);
+    setTimeout(() => setMessageToast(null), 3000);
+  };
 
   const handleAddRule = () => {
     if (!newRule.keyword.trim()) return;
@@ -48,7 +66,7 @@ export const RuleModal: React.FC<RuleModalProps> = ({
       targetField: 'content',
       matchType: 'contains',
       keyword: '',
-      applyFlag: customFlags[1] || '立替',
+      applyFlag: customFlags.find((f) => f === '清算対象') || '清算対象',
       enabled: true,
     });
   };
@@ -71,6 +89,83 @@ export const RuleModal: React.FC<RuleModalProps> = ({
     onApplyRules(localRules, overwrite);
     setShowAppliedToast(true);
     setTimeout(() => setShowAppliedToast(false), 2500);
+  };
+
+  // JSONエクスポート
+  const handleExportRules = () => {
+    if (localRules.length === 0) {
+      showMsg('エクスポートするルールがありません');
+      return;
+    }
+    const dataStr = JSON.stringify(localRules, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mf_auto_rules_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showMsg(`${localRules.length} 件のルールをJSONで保存しました`);
+  };
+
+  // JSONインポート
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (!Array.isArray(parsed)) {
+          throw new Error('配列形式のJSONではありません');
+        }
+
+        // バリデーション
+        const validRules: AutoRule[] = parsed.filter(
+          (r: any) => r && typeof r.keyword === 'string' && typeof r.applyFlag === 'string'
+        ).map((r: any, idx: number) => ({
+          id: r.id || `imported-${Date.now()}-${idx}`,
+          name: r.name || `「${r.keyword}」→ ${r.applyFlag}`,
+          targetField: r.targetField || 'content',
+          matchType: r.matchType || 'contains',
+          keyword: r.keyword,
+          applyFlag: r.applyFlag,
+          enabled: r.enabled !== false,
+        }));
+
+        if (validRules.length === 0) {
+          showMsg('有効なルールデータが見つかりませんでした');
+          return;
+        }
+
+        const shouldAppend = confirm(
+          `${validRules.length} 件のルールが見つかりました。\n\n「OK」: 既存のルールに追加する\n「キャンセル」: 既存のルールを置き換える（上書き）`
+        );
+
+        let merged: AutoRule[];
+        if (shouldAppend) {
+          // 重複排除（同じkeywordとapplyFlagは除外）
+          const existingKeys = new Set(localRules.map((r) => `${r.targetField}_${r.keyword}_${r.applyFlag}`));
+          const newOnes = validRules.filter(
+            (r) => !existingKeys.has(`${r.targetField}_${r.keyword}_${r.applyFlag}`)
+          );
+          merged = [...localRules, ...newOnes];
+          showMsg(`${newOnes.length} 件の新しいルールを追加しました（重複除外済）`);
+        } else {
+          merged = validRules;
+          showMsg(`${validRules.length} 件のルールで上書き保存しました`);
+        }
+
+        setLocalRules(merged);
+        onSaveRules(merged);
+      } catch (err: any) {
+        alert(`インポートに失敗しました: ${err.message}`);
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
   };
 
   return (
@@ -179,10 +274,43 @@ export const RuleModal: React.FC<RuleModalProps> = ({
 
           {/* 登録済みルール一覧 */}
           <div className="space-y-2">
-            <h3 className="text-xs font-bold text-slate-700">登録済みルール一覧 ({localRules.length}件)</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-slate-700">登録済みルール一覧 ({localRules.length}件)</h3>
+              
+              {/* エクスポート・インポートボタン */}
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleImportFileChange}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                  title="JSONファイルからルールを復元"
+                >
+                  <Upload className="w-3 h-3 text-slate-500" />
+                  インポート
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportRules}
+                  disabled={localRules.length === 0}
+                  className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-40 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                  title="現在のルールをJSONファイルでダウンロード"
+                >
+                  <Download className="w-3 h-3 text-slate-500" />
+                  エクスポート
+                </button>
+              </div>
+            </div>
+
             {localRules.length === 0 ? (
-              <p className="text-xs text-slate-400 py-4 text-center border border-dashed rounded-lg">
-                登録されているルールはありません
+              <p className="text-xs text-slate-400 py-6 text-center border border-dashed border-slate-200 rounded-xl">
+                登録されているルールはありません。上から追加するか、インポートしてください。
               </p>
             ) : (
               <div className="space-y-1.5 max-h-60 overflow-y-auto">
@@ -268,9 +396,9 @@ export const RuleModal: React.FC<RuleModalProps> = ({
           </label>
 
           <div className="flex items-center gap-2">
-            {showAppliedToast && (
-              <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-                <Check className="w-4 h-4" /> 適用しました！
+            {(showAppliedToast || messageToast) && (
+              <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1 animate-fadeIn">
+                <Check className="w-4 h-4" /> {messageToast || '適用しました！'}
               </span>
             )}
             <button

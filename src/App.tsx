@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MoneyForwardRecord, AppSettings, AutoRule, FilterOptions } from './types';
 import {
   loadSettings,
@@ -10,7 +10,12 @@ import {
   clearStoredData,
 } from './utils/storage';
 import { applyRulesToRecords } from './utils/rulesEngine';
-import { exportRecordsToCsv } from './utils/csvParser';
+import {
+  exportRecordsToCsv,
+  decodeCsvBuffer,
+  parseMoneyForwardCsv,
+  mergeAndDeduplicateRecords,
+} from './utils/csvParser';
 import { saveToGoogleSheetsViaGas } from './utils/gasApi';
 import { filterRecordsByPeriod, getAvailablePeriods } from './utils/dateUtils';
 import { applyFiltersToRecords, DEFAULT_FILTERS } from './utils/filterUtils';
@@ -24,6 +29,7 @@ import { TransactionTable } from './components/TransactionTable';
 import { SettingsModal } from './components/SettingsModal';
 import { RuleModal } from './components/RuleModal';
 import { ShortcutHelpModal } from './components/ShortcutHelpModal';
+import { ImportModal } from './components/ImportModal';
 import { CheckCircle, AlertTriangle } from 'lucide-react';
 
 export function App() {
@@ -35,6 +41,13 @@ export function App() {
   const [records, setRecords] = useState<MoneyForwardRecord[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [rawCsvContent, setRawCsvContent] = useState<string>('');
+
+  // 取り込み確認モーダル用の一時データ
+  const [pendingImport, setPendingImport] = useState<{
+    rawRecords: MoneyForwardRecord[];
+    fileName: string;
+    rawCsv: string;
+  } | null>(null);
 
   // 期間フィルタ ('ALL' | 'YEAR:2026' | 'MONTH:2026-08')
   const [selectedPeriod, setSelectedPeriod] = useState<string>('ALL');
@@ -53,6 +66,7 @@ export function App() {
   // 初回マウントフラグ（初回ロード時の上書き保存防止）
   const isInitialMount = useRef(true);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const hiddenFileInputRef = useRef<HTMLInputElement>(null);
 
   // トースト通知
   const [toast, setToast] = useState<{
@@ -146,26 +160,64 @@ export function App() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // CSV読み込みハンドラ
+  // CSVファイル解析ハンドラ（FileUploader または Headerの追加ボタンから）
   const handleDataLoaded = (
     loadedRecords: MoneyForwardRecord[],
     uploadedFileName: string,
     rawCsv: string
   ) => {
-    // 読み込み時に有効な自動付与ルールを適用
-    const { updatedRecords, modifiedCount } = applyRulesToRecords(loadedRecords, rules, false);
+    // 期間選択・重複排除確認モーダルを開く
+    setPendingImport({
+      rawRecords: loadedRecords,
+      fileName: uploadedFileName,
+      rawCsv,
+    });
+  };
 
-    setRecords(updatedRecords);
-    setFileName(uploadedFileName);
-    setRawCsvContent(rawCsv);
-    setSelectedPeriod('ALL');
-    setFilters(DEFAULT_FILTERS);
+  // 取り込みモーダルで確定した時の処理
+  const handleConfirmImport = (
+    selectedRecords: MoneyForwardRecord[],
+    mode: 'replace' | 'append'
+  ) => {
+    if (!pendingImport) return;
 
-    if (modifiedCount > 0) {
-      showToast('info', `${loadedRecords.length} 件の明細を読込、${modifiedCount} 件に自動フラグを付与しました`);
+    if (mode === 'replace' || records.length === 0) {
+      // 1. 新規置き換えモード
+      const { updatedRecords, modifiedCount } = applyRulesToRecords(selectedRecords, rules, false);
+      setRecords(updatedRecords);
+      setFileName(pendingImport.fileName);
+      setRawCsvContent(pendingImport.rawCsv);
+      setSelectedPeriod('ALL');
+      setFilters(DEFAULT_FILTERS);
+
+      if (modifiedCount > 0) {
+        showToast('success', `${selectedRecords.length} 件を読込、${modifiedCount} 件に自動フラグを付与しました`);
+      } else {
+        showToast('success', `${selectedRecords.length} 件の明細を読み込みました`);
+      }
     } else {
-      showToast('success', `${loadedRecords.length} 件の明細を読み込みました`);
+      // 2. 既存データに追加モード（重複排除付き）
+      // まずルールを適用
+      const { updatedRecords: incomingWithRules } = applyRulesToRecords(selectedRecords, rules, false);
+      // 重複排除してマージ
+      const { mergedRecords, addedCount, duplicateCount } = mergeAndDeduplicateRecords(
+        records,
+        incomingWithRules
+      );
+
+      setRecords(mergedRecords);
+      setFileName(`${fileName || 'merged'} + ${pendingImport.fileName}`);
+      setRawCsvContent((prev) => `${prev}\n${pendingImport.rawCsv}`);
+
+      showToast(
+        'success',
+        `${addedCount} 件の明細を新たに追加しました${
+          duplicateCount > 0 ? ` (${duplicateCount} 件の重複を自動スキップ)` : ''
+        }`
+      );
     }
+
+    setPendingImport(null);
   };
 
   // 1. 期間で絞り込まれたレコード
@@ -204,6 +256,36 @@ export function App() {
       'success',
       `${selectedIds.length} 件を${target ? '計算対象' : '計算対象外'}に設定しました`
     );
+  };
+
+  // 選択中の期間（月/年）を一括削除
+  const handleDeletePeriod = (period: string, label: string, count: number) => {
+    if (!confirm(`【確認】\n${label} のデータ（${count} 件）を一括削除してもよろしいですか？\n※この操作は取り消せません。`)) {
+      return;
+    }
+
+    // 削除対象以外のレコードを残す
+    let remainingRecords: MoneyForwardRecord[] = [];
+    if (period.startsWith('MONTH:')) {
+      const targetMonth = period.replace('MONTH:', ''); // '2026-08'
+      remainingRecords = records.filter((r) => {
+        const match = r.date.match(/^(\d{4})[/-](\d{1,2})/);
+        if (!match) return true;
+        const ym = `${match[1]}-${match[2].padStart(2, '0')}`;
+        return ym !== targetMonth;
+      });
+    } else if (period.startsWith('YEAR:')) {
+      const targetYear = period.replace('YEAR:', ''); // '2026'
+      remainingRecords = records.filter((r) => {
+        const match = r.date.match(/^(\d{4})/);
+        if (!match) return true;
+        return match[1] !== targetYear;
+      });
+    }
+
+    setRecords(remainingRecords);
+    setSelectedPeriod('ALL');
+    showToast('info', `${label} のデータ（${count} 件）を削除しました（残り: ${remainingRecords.length} 件）`);
   };
 
   // ルール適用（モーダルから）
@@ -278,19 +360,48 @@ export function App() {
 
   // リセット
   const handleReset = () => {
-    if (confirm('現在の編集内容をクリアして別のCSVを読み込みますか？')) {
+    if (confirm('現在の編集内容をクリアして最初からやり直しますか？')) {
       setRecords([]);
       setFileName(null);
       setRawCsvContent('');
       setSelectedPeriod('ALL');
       setFilters(DEFAULT_FILTERS);
       clearStoredData();
-      showToast('info', 'ブラウザ保存データをクリアしました');
+      showToast('info', '作業データをクリアしました');
+    }
+  };
+
+  // ヘッダーからの追加ファイル選択ハンドラ
+  const handleHeaderFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const buffer = await file.arrayBuffer();
+      const decoded = decodeCsvBuffer(buffer);
+      const parsed = parseMoneyForwardCsv(decoded);
+      if (parsed.length === 0) {
+        showToast('error', 'CSVから明細データを取得できませんでした');
+        return;
+      }
+      handleDataLoaded(parsed, file.name, decoded);
+    } catch (err: any) {
+      showToast('error', `CSVの読み込みに失敗しました: ${err.message}`);
+    } finally {
+      if (hiddenFileInputRef.current) hiddenFileInputRef.current.value = '';
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
+      {/* 隠しファイル入力（ヘッダーからのCSV追加取込用） */}
+      <input
+        ref={hiddenFileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        onChange={handleHeaderFileInputChange}
+        className="hidden"
+      />
+
       {/* ヘッダー */}
       <Header
         fileName={fileName}
@@ -300,6 +411,7 @@ export function App() {
         onExportCsv={handleExportCsv}
         onSaveToGas={handleSaveToGas}
         onReset={handleReset}
+        onOpenImportCsv={() => hiddenFileInputRef.current?.click()}
         isSaving={isSaving}
         hasGasUrl={Boolean(settings.gasWebAppUrl)}
       />
@@ -316,6 +428,7 @@ export function App() {
               selectedPeriod={selectedPeriod}
               onSelectPeriod={setSelectedPeriod}
               filteredCount={fullyFilteredRecords.length}
+              onDeletePeriod={handleDeletePeriod}
             />
 
             {/* サマリーカード（現在のフィルタ状態に連動） */}
@@ -362,6 +475,18 @@ export function App() {
         isOpen={isShortcutHelpOpen}
         onClose={() => setIsShortcutHelpOpen(false)}
       />
+
+      {/* CSV取り込み設定モーダル（月選択 & 重複排除追加） */}
+      {pendingImport && (
+        <ImportModal
+          isOpen={Boolean(pendingImport)}
+          onClose={() => setPendingImport(null)}
+          rawRecords={pendingImport.rawRecords}
+          fileName={pendingImport.fileName}
+          existingCount={records.length}
+          onConfirmImport={handleConfirmImport}
+        />
+      )}
 
       {/* トースト通知 */}
       {toast && (

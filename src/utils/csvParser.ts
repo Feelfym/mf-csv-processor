@@ -44,14 +44,16 @@ export const parseMoneyForwardCsv = (csvText: string): MoneyForwardRecord[] => {
     const transferRaw = row['振替'] ?? '0';
     const mfId = (row['ID'] ?? row['取引ID'] ?? '').trim();
 
+    // 独自フラグ・独自メモ（エクスポート済みCSVを取り込む場合）
+    const customFlag = (row['独自フラグ'] ?? '未設定').trim() || '未設定';
+    const customMemo = (row['独自メモ'] ?? '').trim();
+
     // 日付も内容も空の行はスキップ
     if (!date && !content && !amountStr) {
       return;
     }
 
     const rawAmount = parseFloat(amountStr) || 0;
-    // MFの支出はマイナスで記録されている場合とプラスの場合があるが、通常支出はマイナス表記
-    // わかりやすくするために rawAmount をそのまま保持
 
     const record: MoneyForwardRecord = {
       id: mfId ? `mf-${mfId}` : `row-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 7)}`,
@@ -66,8 +68,8 @@ export const parseMoneyForwardCsv = (csvText: string): MoneyForwardRecord[] => {
       memo,
       transfer: transferRaw === '1' || transferRaw === 'true' || transferRaw === '○',
       mfId,
-      customFlag: '未設定',
-      customMemo: '',
+      customFlag,
+      customMemo,
       selected: false,
     };
 
@@ -75,6 +77,96 @@ export const parseMoneyForwardCsv = (csvText: string): MoneyForwardRecord[] => {
   });
 
   return rows;
+};
+
+/**
+ * レコードの一意キーを生成（重複排除用）
+ */
+export const getRecordUniqueKey = (r: MoneyForwardRecord): string => {
+  if (r.mfId && r.mfId.trim()) {
+    return `mf_id:${r.mfId.trim()}`;
+  }
+  // IDがない場合は主要フィールドのハッシュ的結合
+  return `data:${r.date}_${r.amount}_${r.content}_${r.institution}_${r.majorCategory}_${r.transfer ? 1 : 0}`;
+};
+
+/**
+ * 既存レコードと新規取り込みレコードをマージし、重複を自動排除する
+ * @param existing 既存のレコード
+ * @param incoming 新しく取り込むレコード
+ * @returns { mergedRecords, addedCount, duplicateCount }
+ */
+export const mergeAndDeduplicateRecords = (
+  existing: MoneyForwardRecord[],
+  incoming: MoneyForwardRecord[]
+): {
+  mergedRecords: MoneyForwardRecord[];
+  addedCount: number;
+  duplicateCount: number;
+} => {
+  const existingKeyMap = new Map<string, MoneyForwardRecord>();
+  existing.forEach((r) => {
+    existingKeyMap.set(getRecordUniqueKey(r), r);
+  });
+
+  let duplicateCount = 0;
+  const newRecordsToAdd: MoneyForwardRecord[] = [];
+
+  incoming.forEach((r) => {
+    const key = getRecordUniqueKey(r);
+    if (existingKeyMap.has(key)) {
+      duplicateCount++;
+      // 既存レコード（フラグや独自メモが付いている可能性がある）を優先保持
+    } else {
+      existingKeyMap.set(key, r);
+      newRecordsToAdd.push(r);
+    }
+  });
+
+  // 日付順（降順）でマージ
+  const mergedRecords = [...existing, ...newRecordsToAdd].sort((a, b) => b.date.localeCompare(a.date));
+
+  return {
+    mergedRecords,
+    addedCount: newRecordsToAdd.length,
+    duplicateCount,
+  };
+};
+
+/**
+ * レコード群から含まれる年月（YYYY-MM）ごとの件数リストを取得
+ */
+export const getMonthsBreakdown = (
+  records: MoneyForwardRecord[]
+): { month: string; label: string; count: number; totalExpense: number }[] => {
+  const monthMap = new Map<string, { count: number; totalExpense: number }>();
+
+  records.forEach((r) => {
+    if (!r.date) return;
+    const match = r.date.match(/^(\d{4})[/-](\d{1,2})/);
+    if (match) {
+      const yyyy = match[1];
+      const mm = match[2].padStart(2, '0');
+      const ym = `${yyyy}-${mm}`;
+      const prev = monthMap.get(ym) || { count: 0, totalExpense: 0 };
+      monthMap.set(ym, {
+        count: prev.count + 1,
+        totalExpense: prev.totalExpense + (r.amount < 0 && !r.transfer ? Math.abs(r.amount) : 0),
+      });
+    }
+  });
+
+  return Array.from(monthMap.entries())
+    .map(([month, data]) => {
+      const [y, m] = month.split('-');
+      return {
+        month,
+        label: `${y}年${parseInt(m, 10)}月`,
+        count: data.count,
+        totalExpense: data.totalExpense,
+      };
+    })
+    .sort((a, b) => b.month.localeCompare(a.month)); // 新しい月順
 };
 
 /**
