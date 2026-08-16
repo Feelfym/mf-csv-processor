@@ -434,8 +434,13 @@ export function App() {
             {/* サマリーカード（現在のフィルタ状態に連動） */}
             <SummaryCards records={fullyFilteredRecords} customFlags={settings.customFlags} />
 
-            {/* カテゴリ & フラグ分析チャート（現在のフィルタ状態に連動） */}
-            <CategoryChart records={fullyFilteredRecords} />
+            {/* カテゴリ & フラグ分析チャート（現在のフィルタ状態に連動 & クリックで絞り込み） */}
+            <CategoryChart
+              records={fullyFilteredRecords}
+              allPeriodRecords={periodFilteredRecords}
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
 
             {/* メイン明細テーブル */}
             <TransactionTable
