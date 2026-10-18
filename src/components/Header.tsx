@@ -96,7 +96,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-slate-800 tracking-tight whitespace-nowrap">MF CSV Processor</h1>
               <span className="text-xs bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full whitespace-nowrap">
-                v1.2
+                v1.3
               </span>
               {fileName && (
                 <span className="hidden md:inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 whitespace-nowrap">
