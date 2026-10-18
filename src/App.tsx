@@ -31,6 +31,7 @@ import { RuleModal } from './components/RuleModal';
 import { ShortcutHelpModal } from './components/ShortcutHelpModal';
 import { ImportModal } from './components/ImportModal';
 import { NotebookLmExportModal } from './components/NotebookLmExportModal';
+import { AddRecordModal } from './components/AddRecordModal';
 import { CheckCircle, AlertTriangle } from 'lucide-react';
 import { isAnyModalOpen } from './hooks/useModal';
 
@@ -80,6 +81,7 @@ export function App() {
   const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [isNotebookLmModalOpen, setIsNotebookLmModalOpen] = useState(false);
+  const [isAddRecordOpen, setIsAddRecordOpen] = useState(false);
 
   // 通信状態
   const [isSaving, setIsSaving] = useState(false);
@@ -418,6 +420,34 @@ export function App() {
     return found ? found.label : '全期間';
   }, [records, selectedPeriod]);
 
+  // 明細の手動追加
+  const handleAddRecord = (newRecordData: Omit<MoneyForwardRecord, 'id'>) => {
+    const newRecord: MoneyForwardRecord = {
+      ...newRecordData,
+      id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    };
+
+    // 自動ルール判定（独自フラグが未設定の場合のみルールを適用）
+    let recordToAdd = newRecord;
+    if (recordToAdd.customFlag === '未設定' && rules.length > 0) {
+      const { updatedRecords } = applyRulesToRecords([recordToAdd], rules, false);
+      recordToAdd = updatedRecords[0];
+    }
+
+    commitRecords(
+      (prev) => [recordToAdd, ...prev].sort((a, b) => b.date.localeCompare(a.date)),
+      `明細「${recordToAdd.content}」の追加`,
+      fileName ? {} : { fileName: 'manual_entry.csv' }
+    );
+
+    const sign = recordToAdd.amount < 0 ? '-' : '+';
+    showToast(
+      'success',
+      `明細「${recordToAdd.content}」（${sign}¥${Math.abs(recordToAdd.amount).toLocaleString()}）を追加しました`,
+      undoAction
+    );
+  };
+
   // 明細の個別更新
   const handleUpdateRecord = (id: string, updates: Partial<MoneyForwardRecord>) => {
     const label =
@@ -652,6 +682,7 @@ export function App() {
         onReset={handleReset}
         onOpenImportCsv={() => hiddenFileInputRef.current?.click()}
         onOpenNotebookLmExport={() => setIsNotebookLmModalOpen(true)}
+        onOpenAddRecord={() => setIsAddRecordOpen(true)}
         isSaving={isSaving}
         hasGasUrl={Boolean(settings.gasWebAppUrl)}
         onUndo={handleUndo}
@@ -704,6 +735,7 @@ export function App() {
               onBatchUpdateFlag={handleBatchUpdateFlag}
               onBatchToggleCalcTarget={handleBatchToggleCalcTarget}
               onOpenShortcutHelp={() => setIsShortcutHelpOpen(true)}
+              onOpenAddRecord={() => setIsAddRecordOpen(true)}
               searchRef={searchInputRef}
             />
           </div>
@@ -765,6 +797,16 @@ export function App() {
           onMarkAsSettled={handleMarkAsSettled}
         />
       )}
+
+      {/* 明細手動追加モーダル */}
+      <AddRecordModal
+        isOpen={isAddRecordOpen}
+        onClose={() => setIsAddRecordOpen(false)}
+        onAddRecord={handleAddRecord}
+        customFlags={settings.customFlags}
+        existingRecords={records}
+        currentPeriod={selectedPeriod}
+      />
 
       {/* トースト通知 */}
       {toast && (

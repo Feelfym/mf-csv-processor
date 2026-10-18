@@ -38,6 +38,7 @@ export const ShortcutHelpModal: React.FC<ShortcutHelpModalProps> = ({ isOpen, on
         { key: '[  /  ]', desc: '前の月 / 次の月 へ切り替え' },
         { key: '← / →  または  h / l', desc: '前のページ / 次のページ へ移動' },
         { key: '/', desc: '検索バーにフォーカス' },
+        { key: 'n', desc: '明細の手動追加モーダルを開く' },
         { key: 'Cmd / Ctrl + Z', desc: '直前の操作を元に戻す' },
         { key: 'Cmd / Ctrl + Shift + Z', desc: '元に戻した操作をやり直す' },
         { key: 'Esc', desc: '検索や入力のフォーカス解除 / モーダルを閉じる' },

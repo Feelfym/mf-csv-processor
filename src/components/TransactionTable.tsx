@@ -12,6 +12,7 @@ import {
   EyeOff,
   Check,
   Keyboard,
+  PlusCircle,
 } from 'lucide-react';
 import { isAnyModalOpen } from '../hooks/useModal';
 
@@ -25,6 +26,7 @@ interface TransactionTableProps {
   onBatchUpdateFlag: (selectedIds: string[], newFlag: string) => void;
   onBatchToggleCalcTarget: (selectedIds: string[], target: boolean) => void;
   onOpenShortcutHelp: () => void;
+  onOpenAddRecord?: () => void;
   searchRef?: React.RefObject<HTMLInputElement | null>;
 }
 
@@ -38,6 +40,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   onBatchUpdateFlag,
   onBatchToggleCalcTarget,
   onOpenShortcutHelp,
+  onOpenAddRecord,
   searchRef,
 }) => {
   // ソート状態
@@ -184,6 +187,13 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
         return;
       }
 
+      // 'n' キーで新規明細追加
+      if (e.key.toLowerCase() === 'n' && onOpenAddRecord) {
+        e.preventDefault();
+        onOpenAddRecord();
+        return;
+      }
+
       // Cmd+A / Ctrl+A で全選択
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
         e.preventDefault();
@@ -323,6 +333,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
     onBatchToggleCalcTarget,
     onUpdateRecord,
     onOpenShortcutHelp,
+    onOpenAddRecord,
     actualSearchRef,
   ]);
 
@@ -417,6 +428,20 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               支出のみ
             </button>
           </div>
+
+          {/* 明細手動追加ボタン */}
+          {onOpenAddRecord && (
+            <button
+              type="button"
+              onClick={onOpenAddRecord}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors cursor-pointer shrink-0 shadow-2xs"
+              title="明細を手動追加 (n)"
+            >
+              <PlusCircle className="w-3.5 h-3.5 text-emerald-600" />
+              <span>明細を追加</span>
+              <kbd className="px-1 py-0.2 text-[10px] bg-white border border-emerald-200 rounded text-emerald-600">n</kbd>
+            </button>
+          )}
 
           {/* キーボードショートカットヘルプボタン */}
           <button

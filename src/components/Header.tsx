@@ -23,6 +23,7 @@ interface HeaderProps {
   onReset: () => void;
   onOpenImportCsv?: () => void;
   onOpenNotebookLmExport?: () => void;
+  onOpenAddRecord?: () => void;
   isSaving: boolean;
   hasGasUrl: boolean;
   lastSavedTime?: string | null;
@@ -42,6 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   onReset,
   onOpenImportCsv,
   onOpenNotebookLmExport,
+  onOpenAddRecord,
   isSaving,
   hasGasUrl,
   onUndo,
@@ -109,6 +111,18 @@ export const Header: React.FC<HeaderProps> = ({
 
           {fileName && (
             <>
+              {onOpenAddRecord && (
+                <button
+                  type="button"
+                  onClick={onOpenAddRecord}
+                  title="現金や未連携の明細を手動で追加"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-100/70 hover:bg-emerald-200/80 rounded-lg transition-colors cursor-pointer shadow-2xs border border-emerald-200"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>明細追加</span>
+                </button>
+              )}
+
               {onOpenImportCsv && (
                 <button
                   type="button"
