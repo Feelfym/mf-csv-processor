@@ -13,6 +13,7 @@ import {
   Check,
   Keyboard,
 } from 'lucide-react';
+import { isAnyModalOpen } from '../hooks/useModal';
 
 interface TransactionTableProps {
   records: MoneyForwardRecord[]; // 期間＋フィルタ適用済みのレコード
@@ -146,6 +147,9 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   // キーボードナビゲーションハンドラ
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // モーダル表示中はテーブル操作のショートカットを無効化
+      if (isAnyModalOpen()) return;
+
       const activeEl = document.activeElement;
       const isInputActive =
         activeEl?.tagName === 'INPUT' ||

@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Keyboard } from 'lucide-react';
+import { useModal } from '../hooks/useModal';
 
 interface ShortcutHelpModalProps {
   isOpen: boolean;
@@ -7,6 +8,7 @@ interface ShortcutHelpModalProps {
 }
 
 export const ShortcutHelpModal: React.FC<ShortcutHelpModalProps> = ({ isOpen, onClose }) => {
+  const { overlayProps, dialogProps } = useModal(isOpen, onClose);
   if (!isOpen) return null;
 
   const shortcuts = [
@@ -36,6 +38,8 @@ export const ShortcutHelpModal: React.FC<ShortcutHelpModalProps> = ({ isOpen, on
         { key: '[  /  ]', desc: '前の月 / 次の月 へ切り替え' },
         { key: '← / →  または  h / l', desc: '前のページ / 次のページ へ移動' },
         { key: '/', desc: '検索バーにフォーカス' },
+        { key: 'Cmd / Ctrl + Z', desc: '直前の操作を元に戻す' },
+        { key: 'Cmd / Ctrl + Shift + Z', desc: '元に戻した操作をやり直す' },
         { key: 'Esc', desc: '検索や入力のフォーカス解除 / モーダルを閉じる' },
         { key: '?', desc: 'このショートカットヘルプを表示' },
       ],
@@ -43,8 +47,14 @@ export const ShortcutHelpModal: React.FC<ShortcutHelpModalProps> = ({ isOpen, on
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      {...overlayProps}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn"
+    >
+      <div
+        {...dialogProps}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] outline-none"
+      >
         {/* ヘッダー */}
         <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2.5">

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useModal } from '../hooks/useModal';
 import { MoneyForwardRecord } from '../types';
 import { generateNotebookLmMarkdown } from '../utils/notebookLmFormatter';
 import {
@@ -44,6 +45,7 @@ export const NotebookLmExportModal: React.FC<NotebookLmExportModalProps> = ({
     });
   }, [records, periodLabel, customFlags, includeDetailTable]);
 
+  const { overlayProps, dialogProps } = useModal(isOpen, onClose);
   if (!isOpen) return null;
 
   const handleCopy = async () => {
@@ -70,8 +72,14 @@ export const NotebookLmExportModal: React.FC<NotebookLmExportModalProps> = ({
   const targetNotebookUrl = notebookLmUrl?.trim() || 'https://notebooklm.google.com/';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      {...overlayProps}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn"
+    >
+      <div
+        {...dialogProps}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] outline-none"
+      >
         {/* ヘッダー */}
         <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2.5">

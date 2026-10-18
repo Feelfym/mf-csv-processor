@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   PlusCircle,
   BookOpen,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -24,6 +26,10 @@ interface HeaderProps {
   isSaving: boolean;
   hasGasUrl: boolean;
   lastSavedTime?: string | null;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -38,6 +44,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotebookLmExport,
   isSaving,
   hasGasUrl,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
@@ -71,6 +81,32 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* アクションボタン群 */}
         <div className="flex items-center gap-2">
+          {/* 元に戻す / やり直し（クリア直後でも戻せるよう、履歴があれば常に表示） */}
+          {onUndo && onRedo && (fileName || canUndo || canRedo) && (
+            <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden">
+              <button
+                type="button"
+                onClick={onUndo}
+                disabled={!canUndo}
+                title="元に戻す (Cmd/Ctrl + Z)"
+                aria-label="元に戻す"
+                className="p-1.5 text-slate-600 hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                <Undo2 className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={onRedo}
+                disabled={!canRedo}
+                title="やり直す (Cmd/Ctrl + Shift + Z)"
+                aria-label="やり直す"
+                className="p-1.5 text-slate-600 hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent disabled:cursor-not-allowed border-l border-slate-200 transition-colors cursor-pointer"
+              >
+                <Redo2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {fileName && (
             <>
               {onOpenImportCsv && (

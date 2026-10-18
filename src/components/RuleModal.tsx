@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useModal } from '../hooks/useModal';
 import { AutoRule } from '../types';
 import {
   X,
@@ -44,6 +45,7 @@ export const RuleModal: React.FC<RuleModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const { overlayProps, dialogProps } = useModal(isOpen, onClose, { closeOnBackdrop: false });
   if (!isOpen) return null;
 
   const showMsg = (msg: string) => {
@@ -169,8 +171,14 @@ export const RuleModal: React.FC<RuleModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      {...overlayProps}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn"
+    >
+      <div
+        {...dialogProps}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] outline-none"
+      >
         {/* ヘッダー */}
         <div className="p-4 sm:p-6 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
