@@ -694,13 +694,33 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               const isSelected = selectedIds.has(record.id);
               const isExpense = record.amount < 0;
               const isTransfer = record.transfer;
+              const isSettlement =
+                record.customFlag === '清算対象' || record.customFlag === '精算対象';
+              const isSettled =
+                record.customFlag === '清算済み' || record.customFlag === '精算済み';
+              const isExcludedFlag = record.customFlag === '除外';
+              const isOtherFlag =
+                Boolean(record.customFlag) &&
+                record.customFlag !== '未設定' &&
+                !isSettlement &&
+                !isExcludedFlag;
+
+              const leftBorderClass = !record.calculationTarget
+                ? 'border-l-4 border-l-rose-300'
+                : isSettlement
+                ? 'border-l-4 border-l-indigo-500'
+                : isSettled
+                ? 'border-l-4 border-l-emerald-500'
+                : isExcludedFlag
+                ? 'border-l-4 border-l-slate-400'
+                : 'border-l-4 border-l-transparent';
 
               return (
                 <div
                   key={record.id}
-                  className={`p-3.5 space-y-2.5 transition-colors ${
+                  className={`p-3.5 space-y-2.5 transition-colors ${leftBorderClass} ${
                     isSelected ? 'bg-indigo-50/50' : 'bg-white'
-                  } ${!record.calculationTarget ? 'opacity-55 bg-slate-50/60' : ''}`}
+                  } ${!record.calculationTarget ? 'opacity-65 bg-slate-50/70' : ''}`}
                 >
                   {/* 1段目: チェックボックス・日付・金融機関 ／ 金額 */}
                   <div className="flex items-start justify-between gap-2">
@@ -757,41 +777,85 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                     </div>
                   </div>
 
-                  {/* 3段目: 独自フラグ選択 & 計算対象トグル */}
-                  <div className="flex items-center justify-between gap-2 pt-0.5">
-                    <select
-                      value={record.customFlag || '未設定'}
-                      onChange={(e) => onUpdateRecord(record.id, { customFlag: e.target.value })}
-                      className={`flex-1 max-w-[180px] text-xs font-semibold px-2.5 py-1.5 rounded-lg border focus:outline-none transition-colors cursor-pointer ${
-                        record.customFlag === '清算対象' || record.customFlag === '精算対象'
-                          ? 'bg-indigo-50 text-indigo-800 border-indigo-300 shadow-2xs font-bold'
-                          : record.customFlag === '清算済み' || record.customFlag === '精算済み'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
-                          : record.customFlag === '除外'
-                          ? 'bg-slate-100 text-slate-400 border-slate-300 line-through'
-                          : 'bg-white text-slate-600 border-slate-200'
+                  {/* 3段目: ワンタップ仕分けボタン（清算対象・除外・対象外）＋ その他フラグ */}
+                  <div className="flex items-center gap-1.5 pt-0.5">
+                    {/* 清算対象 ワンタップトグル */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdateRecord(
+                          record.id,
+                          isSettlement
+                            ? { customFlag: '未設定' }
+                            : { customFlag: '清算対象', calculationTarget: true }
+                        )
+                      }
+                      aria-pressed={isSettlement}
+                      className={`flex-1 py-2 px-2 rounded-lg border text-xs font-bold inline-flex items-center justify-center gap-1 transition-all active:scale-[0.98] cursor-pointer whitespace-nowrap ${
+                        isSettlement
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                          : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
                       }`}
                     >
-                      {customFlags.map((f) => (
-                        <option key={f} value={f}>
-                          {f}
-                        </option>
-                      ))}
-                    </select>
+                      {isSettlement && <Check className="w-3.5 h-3.5 shrink-0" />}
+                      <span>清算対象</span>
+                    </button>
 
+                    {/* 除外フラグ ワンタップトグル */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdateRecord(record.id, {
+                          customFlag: isExcludedFlag ? '未設定' : '除外',
+                        })
+                      }
+                      aria-pressed={isExcludedFlag}
+                      className={`py-2 px-2.5 rounded-lg border text-xs font-bold inline-flex items-center justify-center gap-1 transition-all active:scale-[0.98] cursor-pointer whitespace-nowrap ${
+                        isExcludedFlag
+                          ? 'bg-slate-600 text-white border-slate-600 shadow-xs'
+                          : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {isExcludedFlag && <Check className="w-3.5 h-3.5 shrink-0" />}
+                      <span>除外</span>
+                    </button>
+
+                    {/* 計算対象外 ワンタップトグル */}
                     <button
                       type="button"
                       onClick={() =>
                         onUpdateRecord(record.id, { calculationTarget: !record.calculationTarget })
                       }
-                      className={`px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-xs font-bold transition-colors cursor-pointer shrink-0 ${
-                        record.calculationTarget
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-slate-200 text-slate-500'
+                      aria-pressed={!record.calculationTarget}
+                      className={`py-2 px-2.5 rounded-lg border text-xs font-bold inline-flex items-center justify-center gap-1 transition-all active:scale-[0.98] cursor-pointer whitespace-nowrap ${
+                        !record.calculationTarget
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      <span>{record.calculationTarget ? '対象 ○' : '対象外 ×'}</span>
+                      {!record.calculationTarget && <X className="w-3.5 h-3.5 shrink-0" />}
+                      <span>対象外</span>
                     </button>
+
+                    {/* その他フラグ（清算済み・カスタムフラグ等） */}
+                    <select
+                      aria-label="その他のフラグを選択"
+                      value={record.customFlag || '未設定'}
+                      onChange={(e) => onUpdateRecord(record.id, { customFlag: e.target.value })}
+                      className={`max-w-[88px] py-2 px-1.5 rounded-lg border text-[11px] font-semibold focus:outline-none transition-colors cursor-pointer ${
+                        isSettled
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
+                          : isOtherFlag
+                          ? 'bg-amber-50 text-amber-800 border-amber-300 font-bold'
+                          : 'bg-slate-50 text-slate-500 border-slate-200'
+                      }`}
+                    >
+                      {customFlags.map((f) => (
+                        <option key={f} value={f}>
+                          {f === '未設定' ? '他…' : f}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* 4段目: メモ / 独自メモ */}
