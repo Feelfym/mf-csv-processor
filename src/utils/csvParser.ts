@@ -190,9 +190,9 @@ export const recordsToSpreadsheetRows = (records: MoneyForwardRecord[]): (string
 };
 
 /**
- * 加工後データをCSV文字列としてエクスポート（UTF-8 BOM付き）
+ * 加工後データをCSV文字列に変換
  */
-export const exportRecordsToCsv = (records: MoneyForwardRecord[], filename = 'moneyforward_processed.csv'): void => {
+export const buildCsvString = (records: MoneyForwardRecord[]): string => {
   const headers = [
     '計算対象',
     '日付',
@@ -223,7 +223,14 @@ export const exportRecordsToCsv = (records: MoneyForwardRecord[], filename = 'mo
     r.customMemo,
   ]);
 
-  const csvString = Papa.unparse([headers, ...data]);
+  return Papa.unparse([headers, ...data]);
+};
+
+/**
+ * 加工後データをCSV文字列としてエクスポート（UTF-8 BOM付き）
+ */
+export const exportRecordsToCsv = (records: MoneyForwardRecord[], filename = 'moneyforward_processed.csv'): void => {
+  const csvString = buildCsvString(records);
   // UTF-8 BOM付きでダウンロード
   const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
   const blob = new Blob([bom, csvString], { type: 'text/csv;charset=utf-8;' });

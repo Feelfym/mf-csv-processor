@@ -1,5 +1,5 @@
 import { MoneyForwardRecord } from '../types';
-import { recordsToSpreadsheetRows } from './csvParser';
+import { recordsToSpreadsheetRows, buildCsvString } from './csvParser';
 
 export interface SaveToGasOptions {
   gasWebAppUrl: string;
@@ -34,7 +34,7 @@ export const saveToGoogleSheetsViaGas = async (
     rows,
     folderId: googleDriveFolderId || '',
     fileName: fileName || `mf_export_${new Date().toISOString().slice(0, 10)}.csv`,
-    csvContent: rawCsvContent || '',
+    csvContent: rawCsvContent || buildCsvString(records),
   };
 
   try {

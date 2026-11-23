@@ -61,13 +61,11 @@ export function App() {
   // 明細データ
   const [records, setRecords] = useState<MoneyForwardRecord[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [rawCsvContent, setRawCsvContent] = useState<string>('');
 
   // 取り込み確認モーダル用の一時データ
   const [pendingImport, setPendingImport] = useState<{
     rawRecords: MoneyForwardRecord[];
     fileName: string;
-    rawCsv: string;
   } | null>(null);
 
   // 期間フィルタ ('ALL' | 'YEAR:2026' | 'MONTH:2026-08')
@@ -83,8 +81,9 @@ export function App() {
   const [isNotebookLmModalOpen, setIsNotebookLmModalOpen] = useState(false);
   const [isAddRecordOpen, setIsAddRecordOpen] = useState(false);
 
-  // 通信状態
+  // 通信状態・ブラウザ保存エラー状態
   const [isSaving, setIsSaving] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
 
   // 初回マウントフラグ（初回ロード時の上書き保存防止）
   const isInitialMount = useRef(true);
@@ -213,9 +212,16 @@ export function App() {
     if (savedSession && savedSession.records && savedSession.records.length > 0) {
       setRecords(savedSession.records);
       setFileName(savedSession.fileName);
-      setRawCsvContent(savedSession.rawCsvContent || '');
       if (savedSession.selectedPeriod) {
         setSelectedPeriod(savedSession.selectedPeriod);
+      }
+      // 旧バージョンで保存されていた巨大な rawCsvContent が残っている場合はスリム化して再保存
+      if ('rawCsvContent' in savedSession && (savedSession as { rawCsvContent?: string }).rawCsvContent) {
+        saveStoredData({
+          records: savedSession.records,
+          fileName: savedSession.fileName,
+          selectedPeriod: savedSession.selectedPeriod,
+        });
       }
       showToast('info', `前回の作業データ（${savedSession.records.length} 件）をブラウザから復元しました`);
     }
@@ -229,16 +235,22 @@ export function App() {
     }
 
     if (records.length > 0) {
-      saveStoredData({
+      const result = saveStoredData({
         records,
         fileName,
-        rawCsvContent,
         selectedPeriod,
       });
+      if (!result.ok) {
+        setStorageError(result.message);
+        showToast('error', result.message);
+      } else {
+        setStorageError(null);
+      }
     } else {
       clearStoredData();
+      setStorageError(null);
     }
-  }, [records, fileName, rawCsvContent, selectedPeriod]);
+  }, [records, fileName, selectedPeriod]);
 
   // グローバルショートカット ([ / ] で月移動, ? でヘルプ, Cmd+Z で元に戻す)
   useEffect(() => {
@@ -322,12 +334,11 @@ export function App() {
   const handleDataLoaded = (
     loadedRecords: MoneyForwardRecord[],
     uploadedFileName: string,
-    rawCsv: string
+    _rawCsv?: string
   ) => {
     setPendingImport({
       rawRecords: loadedRecords,
       fileName: uploadedFileName,
-      rawCsv,
     });
   };
 
@@ -342,7 +353,6 @@ export function App() {
       // 1. 新規置き換えモード
       const { updatedRecords, modifiedCount } = applyRulesToRecords(selectedRecords, rules, false);
       commitRecords(updatedRecords, 'CSVの読み込み', { fileName: pendingImport.fileName });
-      setRawCsvContent(pendingImport.rawCsv);
       setSelectedPeriod('ALL');
       setFilters(DEFAULT_FILTERS);
 
@@ -362,7 +372,6 @@ export function App() {
       commitRecords(mergedRecords, 'CSVの追加取り込み', {
         fileName: `${fileName || 'merged'} + ${pendingImport.fileName}`,
       });
-      setRawCsvContent((prev) => `${prev}\n${pendingImport.rawCsv}`);
 
       showToast(
         'success',
@@ -391,16 +400,21 @@ export function App() {
     setFilters(DEFAULT_FILTERS);
 
     // ストレージにも即時反映
-    saveStoredData({
+    const saveResult = saveStoredData({
       records: backupData.records,
       fileName: backupData.fileName,
-      rawCsvContent: '',
       selectedPeriod: backupData.selectedPeriod,
     });
     saveRules(backupData.rules);
     saveSettings(backupData.settings);
 
-    showToast('success', `全データ（${backupData.records.length} 件の明細 + ルール + 設定）を完全復元しました！（ルール・設定は元に戻せません）`, undoAction);
+    if (!saveResult.ok) {
+      setStorageError(saveResult.message);
+      showToast('error', `画面には復元しましたが、${saveResult.message}`);
+    } else {
+      setStorageError(null);
+      showToast('success', `全データ（${backupData.records.length} 件の明細 + ルール + 設定）を完全復元しました！（ルール・設定は元に戻せません）`, undoAction);
+    }
   };
 
   // 1. 期間で絞り込まれたレコード
@@ -493,7 +507,7 @@ export function App() {
   // 選択中/表示中の「清算対象」を一括で「清算済み」に変更
   const handleMarkAsSettled = (_count?: number, sum?: number) => {
     const targetRecords = fullyFilteredRecords.filter(
-      (r) => r.customFlag === '清算対象' || r.customFlag === '精算対象'
+      (r) => r.calculationTarget && (r.customFlag === '清算対象' || r.customFlag === '精算対象')
     );
 
     if (targetRecords.length === 0) {
@@ -573,14 +587,20 @@ export function App() {
   // 設定保存
   const handleSaveSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
-    saveSettings(newSettings);
-    showToast('success', '設定を保存しました');
+    const saved = saveSettings(newSettings);
+    if (saved) {
+      showToast('success', '設定を保存しました');
+    } else {
+      showToast('error', 'ブラウザ容量不足のため設定の保存に失敗しました');
+    }
   };
 
   // ルール保存
   const handleSaveRules = (newRules: AutoRule[]) => {
     setRules(newRules);
-    saveRules(newRules);
+    if (!saveRules(newRules)) {
+      showToast('error', 'ブラウザ容量不足のためルールの保存に失敗しました');
+    }
   };
 
   // CSVエクスポート（現在絞り込まれている状態を出力）
@@ -614,7 +634,6 @@ export function App() {
         googleDriveFolderId: settings.googleDriveFolderId,
         records: fullyFilteredRecords,
         fileName: fileName || undefined,
-        rawCsvContent: rawCsvContent || undefined,
       });
 
       if (result.success) {
@@ -685,11 +704,31 @@ export function App() {
         onOpenAddRecord={() => setIsAddRecordOpen(true)}
         isSaving={isSaving}
         hasGasUrl={Boolean(settings.gasWebAppUrl)}
+        storageError={storageError}
         onUndo={handleUndo}
         onRedo={handleRedo}
         canUndo={historyState.canUndo}
         canRedo={historyState.canRedo}
       />
+
+      {/* ブラウザ保存失敗時の警告バナー */}
+      {storageError && (
+        <div className="bg-rose-50 border-b border-rose-200 px-4 py-2.5">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2 text-xs text-rose-800">
+            <div className="flex items-center gap-2 font-medium">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{storageError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition-colors cursor-pointer shrink-0"
+            >
+              バックアップ画面を開く
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* メインコンテンツ */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">

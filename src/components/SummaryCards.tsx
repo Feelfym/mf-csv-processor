@@ -24,12 +24,12 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
     .filter((r) => r.calculationTarget && !r.transfer && r.amount > 0)
     .reduce((sum, r) => sum + r.amount, 0);
 
-  // フラグ別集計（未設定以外）
+  // フラグ別集計（未設定以外・計算対象のみ）
   // 支出（マイナス）と割引・返金（プラス）を相殺した「実質金額（純額）」を算出
   const flagSummaries = customFlags
     .filter((f) => f !== '未設定')
     .map((flag) => {
-      const matching = records.filter((r) => r.customFlag === flag);
+      const matching = records.filter((r) => r.calculationTarget && r.customFlag === flag);
       // 支出合計（絶対値）
       const expenseSum = matching
         .filter((r) => r.amount < 0)

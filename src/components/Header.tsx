@@ -13,6 +13,7 @@ import {
   Redo2,
   ChevronDown,
   FileUp,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -28,6 +29,7 @@ interface HeaderProps {
   onOpenAddRecord?: () => void;
   isSaving: boolean;
   hasGasUrl: boolean;
+  storageError?: string | null;
   lastSavedTime?: string | null;
   onUndo?: () => void;
   onRedo?: () => void;
@@ -48,6 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAddRecord,
   isSaving,
   hasGasUrl,
+  storageError,
   onUndo,
   onRedo,
   canUndo = false,
@@ -99,9 +102,20 @@ export const Header: React.FC<HeaderProps> = ({
                 v1.3
               </span>
               {fileName && (
-                <span className="hidden md:inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 whitespace-nowrap">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ブラウザ保存中
-                </span>
+                storageError ? (
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    title={storageError}
+                    className="hidden md:inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded-md border border-rose-300 whitespace-nowrap cursor-pointer"
+                  >
+                    <AlertTriangle className="w-3 h-3 text-rose-600" /> 保存失敗（要バックアップ）
+                  </button>
+                ) : (
+                  <span className="hidden md:inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 whitespace-nowrap">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ブラウザ保存中
+                  </span>
+                )
               )}
             </div>
             {fileName ? (

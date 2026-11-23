@@ -70,11 +70,13 @@ export const loadSettings = (): AppSettings => {
   }
 };
 
-export const saveSettings = (settings: AppSettings): void => {
+export const saveSettings = (settings: AppSettings): boolean => {
   try {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    return true;
   } catch (e) {
     console.error('Failed to save settings to localStorage:', e);
+    return false;
   }
 };
 
@@ -88,38 +90,84 @@ export const loadRules = (): AutoRule[] => {
   }
 };
 
-export const saveRules = (rules: AutoRule[]): void => {
+export const saveRules = (rules: AutoRule[]): boolean => {
   try {
     localStorage.setItem(STORAGE_KEYS.RULES, JSON.stringify(rules));
+    return true;
   } catch (e) {
     console.error('Failed to save rules to localStorage:', e);
+    return false;
   }
 };
 
 export interface StoredSessionData {
   records: MoneyForwardRecord[];
   fileName: string | null;
-  rawCsvContent: string;
   selectedPeriod?: string;
   updatedAt: string;
 }
 
+export type StorageSaveResult =
+  | { ok: true; bytes: number }
+  | { ok: false; reason: 'quota' | 'unknown'; message: string };
+
+const isQuotaError = (err: unknown): boolean => {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { name?: string; code?: number };
+  return (
+    e.name === 'QuotaExceededError' ||
+    e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    e.code === 22 ||
+    e.code === 1014
+  );
+};
+
 /**
  * 明細データ・ファイル名・編集状態をローカルストレージに自動保存
+ * ※容量圧迫を防ぐため、生CSVテキスト（rawCsvContent）は保存対象から除外する
  */
-export const saveStoredData = (data: Omit<StoredSessionData, 'updatedAt'>): void => {
+export const saveStoredData = (data: Omit<StoredSessionData, 'updatedAt'>): StorageSaveResult => {
   try {
     if (!data.records || data.records.length === 0) {
       localStorage.removeItem(STORAGE_KEYS.SAVED_DATA);
-      return;
+      return { ok: true, bytes: 0 };
     }
     const payload: StoredSessionData = {
-      ...data,
+      records: data.records,
+      fileName: data.fileName,
+      selectedPeriod: data.selectedPeriod,
       updatedAt: new Date().toISOString(),
     };
-    localStorage.setItem(STORAGE_KEYS.SAVED_DATA, JSON.stringify(payload));
+    const serialized = JSON.stringify(payload);
+    localStorage.setItem(STORAGE_KEYS.SAVED_DATA, serialized);
+    // localStorage は UTF-16 で格納されるため、概算バイト数として文字数×2を返す
+    return { ok: true, bytes: serialized.length * 2 };
   } catch (e) {
-    console.warn('Failed to save session data to localStorage (storage quota might be exceeded):', e);
+    const quota = isQuotaError(e);
+    console.warn('Failed to save session data to localStorage:', e);
+    return {
+      ok: false,
+      reason: quota ? 'quota' : 'unknown',
+      message: quota
+        ? 'ブラウザの保存容量上限（約5MB）に達したため、自動保存できませんでした。設定画面からJSONバックアップをダウンロードするか、古い月のデータを削除してください。'
+        : 'ブラウザへの自動保存に失敗しました。設定画面からJSONバックアップをダウンロードしてください。',
+    };
+  }
+};
+
+/**
+ * 本アプリが localStorage で使用している概算容量（バイト）を取得
+ */
+export const getStorageUsageBytes = (): { totalBytes: number; sessionBytes: number } => {
+  try {
+    const sessionRaw = localStorage.getItem(STORAGE_KEYS.SAVED_DATA) || '';
+    const settingsRaw = localStorage.getItem(STORAGE_KEYS.SETTINGS) || '';
+    const rulesRaw = localStorage.getItem(STORAGE_KEYS.RULES) || '';
+    const sessionBytes = sessionRaw.length * 2;
+    const totalBytes = (sessionRaw.length + settingsRaw.length + rulesRaw.length) * 2;
+    return { totalBytes, sessionBytes };
+  } catch {
+    return { totalBytes: 0, sessionBytes: 0 };
   }
 };
 

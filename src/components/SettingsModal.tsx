@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useModal } from '../hooks/useModal';
 import { AppSettings, AutoRule, MoneyForwardRecord } from '../types';
+import { getStorageUsageBytes } from '../utils/storage';
 import {
   X,
   Save,
@@ -48,11 +49,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newFlagInput, setNewFlagInput] = useState('');
   const [showSavedToast, setShowSavedToast] = useState(false);
   const [migrationMessage, setMigrationMessage] = useState<string | null>(null);
+  const [storageBytes, setStorageBytes] = useState<number>(0);
 
   const backupFileInputRef = useRef<HTMLInputElement>(null);
 
+  // モーダルを開くたび（または復元等で settings が更新されたとき）に最新の値へ同期
+  useEffect(() => {
+    if (isOpen) {
+      setLocalSettings(settings);
+      setNewFlagInput('');
+      setStorageBytes(getStorageUsageBytes().totalBytes);
+    }
+  }, [isOpen, settings, currentRecords.length]);
+
   const { overlayProps, dialogProps } = useModal(isOpen, onClose, { closeOnBackdrop: false });
   if (!isOpen) return null;
+
+  const storageMb = (storageBytes / (1024 * 1024)).toFixed(2);
+  const storageUsagePercent = Math.min(100, Math.round((storageBytes / (5 * 1024 * 1024)) * 100));
 
   const handleAddFlag = () => {
     const trimmed = newFlagInput.trim();
@@ -180,14 +194,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 text-xs">
           {/* 全データ一括移行・バックアップ */}
           <div className="p-4 bg-gradient-to-br from-indigo-50/80 to-purple-50/80 border border-indigo-200/80 rounded-xl space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-indigo-950 font-bold">
                 <Database className="w-4 h-4 text-indigo-600" />
                 <span>全データ一括移行・バックアップ (JSON)</span>
               </div>
-              <span className="text-[11px] font-semibold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
-                現在のデータ: {currentRecords.length} 件
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
+                  現在のデータ: {currentRecords.length} 件
+                </span>
+                <span
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                    storageUsagePercent >= 80
+                      ? 'bg-rose-50 text-rose-700 border-rose-300'
+                      : 'bg-white text-slate-600 border-slate-200'
+                  }`}
+                  title="ブラウザ保存領域（約5MB上限）の使用目安"
+                >
+                  容量: {storageMb} MB ({storageUsagePercent}%)
+                </span>
+              </div>
             </div>
 
             <p className="text-[11px] text-slate-600 leading-relaxed">

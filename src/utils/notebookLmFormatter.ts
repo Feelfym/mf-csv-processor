@@ -27,11 +27,11 @@ export const generateNotebookLmMarkdown = (
 
   const netBalance = totalIncome - totalExpense;
 
-  // 2. フラグ別集計（純額計算）
+  // 2. フラグ別集計（純額計算・計算対象のみ）
   const flagSummaries = customFlags
     .filter((f) => f !== '未設定')
     .map((flag) => {
-      const matching = records.filter((r) => r.customFlag === flag);
+      const matching = records.filter((r) => r.calculationTarget && r.customFlag === flag);
       const expenseSum = matching
         .filter((r) => r.amount < 0)
         .reduce((acc, r) => acc + Math.abs(r.amount), 0);
@@ -61,9 +61,9 @@ export const generateNotebookLmMarkdown = (
     }))
     .sort((a, b) => b.sum - a.sum);
 
-  // 4. 清算対象明細
+  // 4. 清算対象明細（計算対象のみ）
   const settlementRecords = records.filter(
-    (r) => r.customFlag === '清算対象' || r.customFlag === '精算対象'
+    (r) => r.calculationTarget && (r.customFlag === '清算対象' || r.customFlag === '精算対象')
   );
 
   // Markdown組み立て

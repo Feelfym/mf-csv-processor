@@ -89,15 +89,17 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
       .sort((a, b) => b.value - a.value);
   }, [categoryExpenses, isFilteringCategory]);
 
-  // フラグ別ビューの集計（大項目フィルター等を反映したレコードからフラグ別の純額を算出）
+  // フラグ別ビューの集計（大項目フィルター等を反映した計算対象レコードからフラグ別の純額を算出）
   const flagData = useMemo(() => {
     const flagMap: { [key: string]: number } = {};
-    recordsFilteredExceptFlag.forEach((r) => {
-      const flag = r.customFlag || '未設定';
-      if (!flagMap[flag]) flagMap[flag] = 0;
-      // 支出（amount < 0）はプラス加算、割引・返金（amount > 0）はマイナス減算
-      flagMap[flag] += -r.amount;
-    });
+    recordsFilteredExceptFlag
+      .filter((r) => r.calculationTarget)
+      .forEach((r) => {
+        const flag = r.customFlag || '未設定';
+        if (!flagMap[flag]) flagMap[flag] = 0;
+        // 支出（amount < 0）はプラス加算、割引・返金（amount > 0）はマイナス減算
+        flagMap[flag] += -r.amount;
+      });
 
     return Object.entries(flagMap)
       .filter(([_, value]) => value > 0)
@@ -108,6 +110,10 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
   const totalExpense = useMemo(() => {
     return categoryData.reduce((sum, d) => sum + d.value, 0);
   }, [categoryData]);
+
+  const totalFlagAmount = useMemo(() => {
+    return flagData.reduce((sum, d) => sum + d.value, 0);
+  }, [flagData]);
 
   // 大項目クリックハンドラ（トグル）
   const handleCategoryClick = (categoryName: string) => {
@@ -253,7 +259,6 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
                         <Cell
                           key={`cell-${index}`}
                           fill={COLORS[index % COLORS.length]}
-                          opacity={!isFilteringCategory && isFilteringCategory && !isSelected ? 0.35 : 1}
                           stroke={isSelected ? '#1e1b4b' : '#fff'}
                           strokeWidth={isSelected ? 3 : 1}
                           className="transition-all cursor-pointer hover:opacity-80"
@@ -305,7 +310,8 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
           {/* リスト・凡例 */}
           <div className="md:col-span-6 space-y-1.5 max-h-56 overflow-y-auto pr-2">
             {(viewType === 'category' ? categoryData : flagData).map((item, idx) => {
-              const percentage = totalExpense > 0 ? ((item.value / totalExpense) * 100).toFixed(1) : '0';
+              const denominator = viewType === 'category' ? totalExpense : totalFlagAmount;
+              const percentage = denominator > 0 ? ((item.value / denominator) * 100).toFixed(1) : '0';
               const isSelected =
                 viewType === 'category'
                   ? !isFilteringCategory && filters.selectedMajorCategory === item.name

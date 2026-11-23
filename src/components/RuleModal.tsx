@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useModal } from '../hooks/useModal';
 import { AutoRule } from '../types';
 import {
@@ -44,6 +44,19 @@ export const RuleModal: React.FC<RuleModalProps> = ({
   const [messageToast, setMessageToast] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // モーダルを開くたび、またはバックアップ復元等で rules / customFlags が更新されたときに同期
+  useEffect(() => {
+    if (isOpen) {
+      setLocalRules(rules);
+      setNewRule((prev) => ({
+        ...prev,
+        applyFlag: customFlags.includes(prev.applyFlag)
+          ? prev.applyFlag
+          : customFlags.find((f) => f === '清算対象') || customFlags[1] || '清算対象',
+      }));
+    }
+  }, [isOpen, rules, customFlags]);
 
   const { overlayProps, dialogProps } = useModal(isOpen, onClose, { closeOnBackdrop: false });
   if (!isOpen) return null;
