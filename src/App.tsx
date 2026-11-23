@@ -32,7 +32,7 @@ import { ShortcutHelpModal } from './components/ShortcutHelpModal';
 import { ImportModal } from './components/ImportModal';
 import { NotebookLmExportModal } from './components/NotebookLmExportModal';
 import { AddRecordModal } from './components/AddRecordModal';
-import { CheckCircle, AlertTriangle } from 'lucide-react';
+import { CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { isAnyModalOpen } from './hooks/useModal';
 
 /** 履歴の最大保持数 */
@@ -359,6 +359,14 @@ export function App() {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [records, selectedPeriod]);
 
+  const dismissToast = () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast(null);
+  };
+
   const showToast = (
     type: 'success' | 'error' | 'info',
     message: string,
@@ -366,8 +374,8 @@ export function App() {
   ) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ type, message, action });
-    // 「元に戻す」付きのトーストは押す時間を確保するため長めに表示
-    toastTimerRef.current = setTimeout(() => setToast(null), action ? 7000 : 4000);
+    const duration = type === 'error' ? 4500 : action ? 3000 : 2000;
+    toastTimerRef.current = setTimeout(() => setToast(null), duration);
   };
 
   // CSVファイル解析ハンドラ（FileUploader または Headerの追加ボタンから）
@@ -878,37 +886,49 @@ export function App() {
         currentPeriod={selectedPeriod}
       />
 
-      {/* トースト通知 */}
+      {/* トースト通知（スマホは下部ボタンを隠さないようヘッダー直下、PCは右下に表示） */}
       {toast && (
-        <div className="fixed bottom-4 left-3 right-3 sm:left-auto sm:bottom-6 sm:right-6 z-50 animate-slideUp">
+        <div className="fixed top-16 left-3 right-3 sm:top-auto sm:left-auto sm:bottom-6 sm:right-6 z-50 animate-slideUp">
           <div
-            className={`flex items-center justify-between sm:justify-start gap-2.5 px-4 py-3 rounded-xl shadow-lg text-xs font-medium border ${
+            className={`flex items-center justify-between sm:justify-start gap-2 px-3.5 py-2.5 rounded-xl shadow-lg text-xs font-medium border ${
               toast.type === 'success'
-                ? 'bg-emerald-900 text-white border-emerald-800'
+                ? 'bg-emerald-900/95 text-white border-emerald-800'
                 : toast.type === 'error'
-                ? 'bg-rose-900 text-white border-rose-800'
-                : 'bg-slate-900 text-white border-slate-800'
+                ? 'bg-rose-900/95 text-white border-rose-800'
+                : 'bg-slate-900/95 text-white border-slate-800'
             }`}
           >
-            {toast.type === 'success' ? (
-              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-            ) : toast.type === 'error' ? (
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-            ) : null}
-            <span>{toast.message}</span>
-            {toast.action && (
+            <div className="flex items-center gap-2 min-w-0">
+              {toast.type === 'success' ? (
+                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : toast.type === 'error' ? (
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              ) : null}
+              <span className="leading-snug">{toast.message}</span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {toast.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const action = toast.action;
+                    dismissToast();
+                    action?.onClick();
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 font-bold text-white transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  {toast.action.label}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  const action = toast.action;
-                  setToast(null);
-                  action?.onClick();
-                }}
-                className="ml-2 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 font-bold text-white transition-colors cursor-pointer whitespace-nowrap"
+                onClick={dismissToast}
+                className="p-1 text-white/60 hover:text-white rounded-md hover:bg-white/10 transition-colors cursor-pointer"
+                aria-label="通知を閉じる"
               >
-                {toast.action.label}
+                <X className="w-3.5 h-3.5" />
               </button>
-            )}
+            </div>
           </div>
         </div>
       )}
