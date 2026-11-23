@@ -143,7 +143,7 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
   const hasNoData = viewType === 'category' ? categoryExpenses.length === 0 : flagData.length === 0;
 
   return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+    <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">

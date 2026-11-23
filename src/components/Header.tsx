@@ -60,9 +60,9 @@ export const Header: React.FC<HeaderProps> = ({
   const [activeDropdown, setActiveDropdown] = useState<'add' | 'export' | 'settings' | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 外側クリックでドロップダウンを閉じる
+  // 外側クリック / タップでドロップダウンを閉じる
   useEffect(() => {
-    const handlePointerDown = (e: MouseEvent) => {
+    const handlePointerDown = (e: PointerEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setActiveDropdown(null);
       }
@@ -73,10 +73,10 @@ export const Header: React.FC<HeaderProps> = ({
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
@@ -89,16 +89,19 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
         {/* ロゴ・タイトル */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shrink-0">
-            <FileSpreadsheet className="w-5 h-5" />
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shrink-0">
+            <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-slate-800 tracking-tight whitespace-nowrap">MF CSV Processor</h1>
-              <span className="text-xs bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full whitespace-nowrap">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <h1 className="text-sm sm:text-lg font-bold text-slate-800 tracking-tight whitespace-nowrap truncate">
+                <span className="sm:hidden">MF CSV</span>
+                <span className="hidden sm:inline">MF CSV Processor</span>
+              </h1>
+              <span className="hidden sm:inline-block text-xs bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full whitespace-nowrap">
                 v1.3
               </span>
               {fileName && (
@@ -119,17 +122,18 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
             {fileName ? (
-              <p className="text-xs text-slate-500 truncate max-w-xs sm:max-w-md lg:max-w-lg">
-                <span className="font-medium text-slate-700">{fileName}</span> ({recordCount.toLocaleString()} 件)
+              <p className="text-[11px] sm:text-xs text-slate-500 truncate max-w-[110px] sm:max-w-md lg:max-w-lg">
+                <span className="hidden sm:inline font-medium text-slate-700">{fileName} </span>
+                <span>{recordCount.toLocaleString()} 件</span>
               </p>
             ) : (
-              <p className="text-xs text-slate-400 truncate">マネーフォワードCSVの加工・フラグ付け・集計</p>
+              <p className="hidden sm:block text-xs text-slate-400 truncate">マネーフォワードCSVの加工・フラグ付け・集計</p>
             )}
           </div>
         </div>
 
         {/* アクションボタン群（ドロップダウン集約） */}
-        <div ref={containerRef} className="flex items-center gap-2 shrink-0">
+        <div ref={containerRef} className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* 元に戻す / やり直し */}
           {onUndo && onRedo && (fileName || canUndo || canRedo) && (
             <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden bg-white shadow-2xs">
@@ -163,7 +167,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleDropdown('add')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shadow-2xs ${
+                  className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shadow-2xs ${
                     activeDropdown === 'add'
                       ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-500/20'
                       : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/80'
@@ -176,7 +180,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
 
                 {activeDropdown === 'add' && (
-                  <div className="absolute right-0 mt-1.5 w-60 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-fadeIn text-xs">
+                  <div className="absolute right-0 mt-1.5 w-60 max-w-[calc(100vw-1.5rem)] bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-fadeIn text-xs">
                     {onOpenAddRecord && (
                       <button
                         type="button"
@@ -184,13 +188,13 @@ export const Header: React.FC<HeaderProps> = ({
                           closeDropdown();
                           onOpenAddRecord();
                         }}
-                        className="w-full px-3 py-2 text-left flex items-start gap-2.5 hover:bg-slate-50 transition-colors cursor-pointer group"
+                        className="w-full px-3 py-2.5 sm:py-2 text-left flex items-start gap-2.5 hover:bg-slate-50 transition-colors cursor-pointer group"
                       >
                         <PlusCircle className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0 group-hover:scale-110 transition-transform" />
                         <div>
                           <div className="font-bold text-slate-800 flex items-center gap-1.5">
                             明細を手動追加
-                            <kbd className="px-1 py-0.2 text-[10px] bg-slate-100 border border-slate-200 rounded text-slate-500 font-mono">n</kbd>
+                            <kbd className="hidden md:inline px-1 py-0.2 text-[10px] bg-slate-100 border border-slate-200 rounded text-slate-500 font-mono">n</kbd>
                           </div>
                           <div className="text-[11px] text-slate-500">現金や未連携の明細を1件追加</div>
                         </div>
@@ -204,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
                           closeDropdown();
                           onOpenImportCsv();
                         }}
-                        className="w-full px-3 py-2 text-left flex items-start gap-2.5 hover:bg-slate-50 transition-colors cursor-pointer group"
+                        className="w-full px-3 py-2.5 sm:py-2 text-left flex items-start gap-2.5 hover:bg-slate-50 transition-colors cursor-pointer group"
                       >
                         <FileUp className="w-4 h-4 text-indigo-600 mt-0.5 shrink-0 group-hover:scale-110 transition-transform" />
                         <div>
@@ -222,7 +226,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleDropdown('export')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shadow-2xs ${
+                  className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shadow-2xs ${
                     activeDropdown === 'export'
                       ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-500/20'
                       : 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100/80'
@@ -230,12 +234,13 @@ export const Header: React.FC<HeaderProps> = ({
                   aria-expanded={activeDropdown === 'export'}
                 >
                   <Download className={`w-3.5 h-3.5 ${activeDropdown === 'export' ? 'text-white' : 'text-indigo-700'}`} />
-                  <span>出力・保存</span>
+                  <span className="sm:hidden">出力</span>
+                  <span className="hidden sm:inline">出力・保存</span>
                   <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${activeDropdown === 'export' ? 'rotate-180 text-white' : 'text-indigo-600'}`} />
                 </button>
 
                 {activeDropdown === 'export' && (
-                  <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-fadeIn text-xs">
+                  <div className="absolute right-0 mt-1.5 w-64 max-w-[calc(100vw-1.5rem)] bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-fadeIn text-xs">
                     {onOpenNotebookLmExport && (
                       <button
                         type="button"
@@ -313,7 +318,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {activeDropdown === 'settings' && (
-              <div className="absolute right-0 mt-1.5 w-60 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-fadeIn text-xs">
+              <div className="absolute right-0 mt-1.5 w-60 max-w-[calc(100vw-1.5rem)] bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-fadeIn text-xs">
                 <button
                   type="button"
                   onClick={() => {

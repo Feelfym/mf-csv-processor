@@ -366,14 +366,14 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
             >
-              キャンセル (Esc)
+              キャンセル<span className="hidden sm:inline"> (Esc)</span>
             </button>
             <button
               type="submit"
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-all shadow-xs cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
-              明細を追加する (Enter)
+              <span>明細を追加する<span className="hidden sm:inline"> (Enter)</span></span>
             </button>
           </div>
         </form>

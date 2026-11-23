@@ -731,7 +731,7 @@ export function App() {
       )}
 
       {/* メインコンテンツ */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {records.length === 0 ? (
           <FileUploader
             onDataLoaded={handleDataLoaded}
@@ -849,9 +849,9 @@ export function App() {
 
       {/* トースト通知 */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-slideUp">
+        <div className="fixed bottom-4 left-3 right-3 sm:left-auto sm:bottom-6 sm:right-6 z-50 animate-slideUp">
           <div
-            className={`flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg text-xs font-medium border ${
+            className={`flex items-center justify-between sm:justify-start gap-2.5 px-4 py-3 rounded-xl shadow-lg text-xs font-medium border ${
               toast.type === 'success'
                 ? 'bg-emerald-900 text-white border-emerald-800'
                 : toast.type === 'error'

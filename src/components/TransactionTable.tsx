@@ -13,8 +13,11 @@ import {
   Check,
   Keyboard,
   PlusCircle,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { isAnyModalOpen } from '../hooks/useModal';
+import { DEFAULT_FILTERS } from '../utils/filterUtils';
 
 interface TransactionTableProps {
   records: MoneyForwardRecord[]; // 期間＋フィルタ適用済みのレコード
@@ -56,6 +59,9 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   // ページネーション
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
+
+  // モバイル用フィルタ折りたたみ開閉
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
 
   // 行の参照（スクロール追従用）
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
@@ -339,126 +345,223 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
 
   const selectedCount = selectedIds.size;
 
+  // 選択中のレコード合計金額（支出をプラス・返金等をマイナスにした実質純額）
+  const selectedNetSum = useMemo(() => {
+    if (selectedIds.size === 0) return 0;
+    return records
+      .filter((r) => selectedIds.has(r.id))
+      .reduce((acc, r) => acc + (r.amount < 0 ? Math.abs(r.amount) : -r.amount), 0);
+  }, [records, selectedIds]);
+
+  // 適用中フィルタ件数（モバイルのフィルタボタンバッジ用）
+  const activeFilterCount =
+    (filters.selectedFlag !== 'ALL' ? 1 : 0) +
+    (filters.selectedMajorCategory !== 'ALL' ? 1 : 0) +
+    (filters.onlyExpense ? 1 : 0) +
+    (!filters.hideTransfers ? 1 : 0);
+
+  const hasAnyFilter = activeFilterCount > 0 || filters.keyword.trim() !== '';
+
+  const handleResetFilters = () => {
+    onFiltersChange(DEFAULT_FILTERS);
+    setCurrentPage(1);
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
       {/* フィルタ・検索バー */}
-      <div className="p-4 border-b border-slate-200 bg-slate-50/50 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3 flex-1">
-            {/* 検索入力 */}
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                ref={actualSearchRef}
-                type="text"
-                placeholder="検索... (/ キーでフォーカス, Escで解除)"
-                value={filters.keyword}
-                onChange={(e) => {
-                  onFiltersChange({ ...filters, keyword: e.target.value });
+      <div className="p-3 sm:p-4 border-b border-slate-200 bg-slate-50/50 space-y-2.5 sm:space-y-3">
+        {/* 上段: 検索入力 ＋ モバイル絞込トグル ＋ 追加・ショートカットボタン */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* 検索入力 */}
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              ref={actualSearchRef}
+              type="text"
+              placeholder="検索... (内容・メモ・金融機関)"
+              value={filters.keyword}
+              onChange={(e) => {
+                onFiltersChange({ ...filters, keyword: e.target.value });
+                setCurrentPage(1);
+              }}
+              className="w-full pl-9 pr-8 py-2 md:py-1.5 text-sm md:text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+            />
+            {filters.keyword && (
+              <button
+                type="button"
+                onClick={() => {
+                  onFiltersChange({ ...filters, keyword: '' });
                   setCurrentPage(1);
                 }}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* フラグフィルタ */}
-            <div className="flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <select
-                value={filters.selectedFlag}
-                onChange={(e) => {
-                  onFiltersChange({ ...filters, selectedFlag: e.target.value });
-                  setCurrentPage(1);
-                }}
-                className="py-1.5 px-2.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                aria-label="検索語をクリア"
               >
-                <option value="ALL">すべてのフラグ</option>
-                {customFlags.map((flag) => (
-                  <option key={flag} value={flag}>
-                    {flag}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 大項目フィルタ */}
-            <div className="flex items-center gap-1.5">
-              <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <select
-                value={filters.selectedMajorCategory}
-                onChange={(e) => {
-                  onFiltersChange({ ...filters, selectedMajorCategory: e.target.value });
-                  setCurrentPage(1);
-                }}
-                className="py-1.5 px-2.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 max-w-[140px]"
-              >
-                <option value="ALL">すべての大項目</option>
-                {majorCategories.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 振替非表示トグル */}
-            <button
-              type="button"
-              onClick={() => onFiltersChange({ ...filters, hideTransfers: !filters.hideTransfers })}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
-                filters.hideTransfers
-                  ? 'bg-slate-100 text-slate-700 border-slate-300'
-                  : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <EyeOff className="w-3.5 h-3.5" />
-              振替を非表示
-            </button>
-
-            {/* 支出のみトグル */}
-            <button
-              type="button"
-              onClick={() => onFiltersChange({ ...filters, onlyExpense: !filters.onlyExpense })}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
-                filters.onlyExpense
-                  ? 'bg-rose-50 text-rose-700 border-rose-200'
-                  : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              支出のみ
-            </button>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
+
+          {/* モバイル専用: フィルタ開閉トグルボタン */}
+          <button
+            type="button"
+            onClick={() => setIsMobileFilterOpen((prev) => !prev)}
+            className={`md:hidden flex items-center gap-1.5 px-2.5 py-2 text-xs font-semibold rounded-lg border transition-colors cursor-pointer shrink-0 ${
+              isMobileFilterOpen || activeFilterCount > 0
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                : 'bg-white text-slate-600 border-slate-300'
+            }`}
+            aria-expanded={isMobileFilterOpen}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>絞込</span>
+            {activeFilterCount > 0 && (
+              <span className="px-1.5 py-0.2 text-[10px] bg-indigo-600 text-white rounded-full font-bold">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
 
           {/* 明細手動追加ボタン */}
           {onOpenAddRecord && (
             <button
               type="button"
               onClick={onOpenAddRecord}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors cursor-pointer shrink-0 shadow-2xs"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2 md:py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg transition-colors cursor-pointer shrink-0 shadow-2xs"
               title="明細を手動追加 (n)"
             >
               <PlusCircle className="w-3.5 h-3.5 text-emerald-600" />
-              <span>明細を追加</span>
-              <kbd className="px-1 py-0.2 text-[10px] bg-white border border-emerald-200 rounded text-emerald-600">n</kbd>
+              <span className="sm:hidden">追加</span>
+              <span className="hidden sm:inline">明細を追加</span>
+              <kbd className="hidden md:inline px-1 py-0.2 text-[10px] bg-white border border-emerald-200 rounded text-emerald-600">n</kbd>
             </button>
           )}
 
-          {/* キーボードショートカットヘルプボタン */}
+          {/* キーボードショートカットヘルプボタン（PCのみ） */}
           <button
             type="button"
             onClick={onOpenShortcutHelp}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors cursor-pointer shrink-0"
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors cursor-pointer shrink-0"
             title="ショートカットヘルプ (?)"
           >
             <Keyboard className="w-3.5 h-3.5 text-slate-500" />
-            <span className="hidden sm:inline">ショートカット</span>
+            <span>ショートカット</span>
             <kbd className="px-1 py-0.2 text-[10px] bg-slate-100 border rounded text-slate-500">?</kbd>
           </button>
         </div>
 
-        {/* 一括操作バー（常にスペースを確保してレイアウトシフト・ガタつきを防止） */}
+        {/* フィルタ条件群（PCでは常時表示、モバイルでは折りたたみ展開時のみ表示） */}
         <div
-          className={`min-h-[42px] px-3 py-1.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 transition-colors duration-150 ${
+          className={`${
+            isMobileFilterOpen ? 'flex' : 'hidden'
+          } md:flex flex-wrap items-center gap-2 sm:gap-2.5 pt-1 md:pt-0`}
+        >
+          {/* フラグフィルタ */}
+          <div className="flex items-center gap-1.5 flex-1 min-w-[140px] md:flex-none">
+            <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <select
+              value={filters.selectedFlag}
+              onChange={(e) => {
+                onFiltersChange({ ...filters, selectedFlag: e.target.value });
+                setCurrentPage(1);
+              }}
+              className="w-full md:w-auto py-1.5 px-2.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+            >
+              <option value="ALL">すべてのフラグ</option>
+              {customFlags.map((flag) => (
+                <option key={flag} value={flag}>
+                  {flag}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 大項目フィルタ */}
+          <div className="flex items-center gap-1.5 flex-1 min-w-[140px] md:flex-none">
+            <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <select
+              value={filters.selectedMajorCategory}
+              onChange={(e) => {
+                onFiltersChange({ ...filters, selectedMajorCategory: e.target.value });
+                setCurrentPage(1);
+              }}
+              className="w-full md:w-auto py-1.5 px-2.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 md:max-w-[160px]"
+            >
+              <option value="ALL">すべての大項目</option>
+              {majorCategories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 振替非表示トグル */}
+          <button
+            type="button"
+            onClick={() => onFiltersChange({ ...filters, hideTransfers: !filters.hideTransfers })}
+            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
+              filters.hideTransfers
+                ? 'bg-slate-100 text-slate-700 border-slate-300'
+                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+            振替を非表示
+          </button>
+
+          {/* 支出のみトグル */}
+          <button
+            type="button"
+            onClick={() => onFiltersChange({ ...filters, onlyExpense: !filters.onlyExpense })}
+            className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
+              filters.onlyExpense
+                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            支出のみ
+          </button>
+
+          {/* モバイル専用: 並び替えコントロール */}
+          <div className="flex md:hidden items-center gap-1.5 w-full pt-1 border-t border-slate-200/70">
+            <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="text-[11px] text-slate-500 shrink-0">並び順:</span>
+            <select
+              value={sortField}
+              onChange={(e) => setSortField(e.target.value as 'date' | 'amount' | 'content' | 'customFlag')}
+              className="flex-1 py-1.5 px-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none"
+            >
+              <option value="date">日付</option>
+              <option value="amount">金額</option>
+              <option value="content">内容</option>
+              <option value="customFlag">独自フラグ</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+              className="px-2.5 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded-lg text-slate-700 cursor-pointer"
+            >
+              {sortOrder === 'desc' ? '降順 ↓' : '昇順 ↑'}
+            </button>
+          </div>
+
+          {/* フィルタ全解除ボタン */}
+          {hasAnyFilter && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              フィルタ解除
+            </button>
+          )}
+        </div>
+
+        {/* PC用 一括操作バー（常にスペースを確保してレイアウトシフト・ガタつきを防止） */}
+        <div
+          className={`hidden md:flex min-h-[42px] px-3 py-1.5 rounded-xl border flex-wrap items-center justify-between gap-3 transition-colors duration-150 ${
             selectedCount > 0
               ? 'bg-indigo-50 border-indigo-200 text-indigo-900 shadow-2xs'
               : 'bg-slate-100/50 border-dashed border-slate-200 text-slate-400'
@@ -468,7 +571,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
             <>
               <div className="flex items-center gap-2 text-xs font-semibold text-indigo-900">
                 <Check className="w-4 h-4 text-indigo-600" />
-                <span>{selectedCount} 件を選択中</span>
+                <span>
+                  {selectedCount} 件を選択中
+                  <span className="ml-1.5 font-mono text-indigo-700">
+                    （合計 ¥{selectedNetSum.toLocaleString()}）
+                  </span>
+                </span>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -553,8 +661,163 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
         </div>
       </div>
 
-      {/* テーブル本体 */}
-      <div className="overflow-x-auto">
+      {/* モバイル用 カードリスト表示 (md 未満) */}
+      <div className="md:hidden">
+        {/* モバイル用 全選択・件数ミニバー */}
+        {paginatedRecords.length > 0 && (
+          <div className="px-3 py-2 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
+            <button
+              type="button"
+              onClick={handleToggleSelectAll}
+              className="inline-flex items-center gap-1.5 font-medium text-slate-700 cursor-pointer"
+            >
+              {isAllSelected ? (
+                <CheckSquare className="w-4 h-4 text-indigo-600" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400" />
+              )}
+              <span>{isAllSelected ? 'このページの選択を解除' : 'このページをすべて選択'}</span>
+            </button>
+            <span className="text-[11px] text-slate-500">
+              {sortedRecords.length.toLocaleString()} 件
+            </span>
+          </div>
+        )}
+
+        {paginatedRecords.length === 0 ? (
+          <div className="py-12 text-center text-xs text-slate-400">
+            条件に一致する明細がありません
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-200/80">
+            {paginatedRecords.map((record) => {
+              const isSelected = selectedIds.has(record.id);
+              const isExpense = record.amount < 0;
+              const isTransfer = record.transfer;
+
+              return (
+                <div
+                  key={record.id}
+                  className={`p-3.5 space-y-2.5 transition-colors ${
+                    isSelected ? 'bg-indigo-50/50' : 'bg-white'
+                  } ${!record.calculationTarget ? 'opacity-55 bg-slate-50/60' : ''}`}
+                >
+                  {/* 1段目: チェックボックス・日付・金融機関 ／ 金額 */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSelectRow(record.id)}
+                        className="p-1 -m-1 text-slate-400 hover:text-slate-700 cursor-pointer shrink-0"
+                        aria-label="行を選択"
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-5 h-5 text-indigo-600" />
+                        ) : (
+                          <Square className="w-5 h-5" />
+                        )}
+                      </button>
+                      <span className="font-mono text-[11px] text-slate-500 shrink-0">
+                        {record.date}
+                      </span>
+                      {isTransfer && (
+                        <span className="text-[10px] px-1.5 py-0.2 bg-slate-200 text-slate-600 rounded shrink-0">
+                          振替
+                        </span>
+                      )}
+                      {record.institution && (
+                        <span className="text-[11px] text-slate-400 truncate">
+                          {record.institution}
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className={`font-mono text-sm font-bold whitespace-nowrap shrink-0 ${
+                        isExpense ? 'text-slate-900' : 'text-emerald-600'
+                      }`}
+                    >
+                      {record.amount > 0
+                        ? `+¥${record.amount.toLocaleString()}`
+                        : `¥${record.amount.toLocaleString()}`}
+                    </span>
+                  </div>
+
+                  {/* 2段目: 内容 & カテゴリ */}
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-slate-800 leading-snug break-words">
+                      {record.content}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-[11px] text-slate-700">
+                        {record.majorCategory}
+                      </span>
+                      {record.mediumCategory && record.mediumCategory !== '未分類' && (
+                        <span className="text-[11px] text-slate-400">/ {record.mediumCategory}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 3段目: 独自フラグ選択 & 計算対象トグル */}
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <select
+                      value={record.customFlag || '未設定'}
+                      onChange={(e) => onUpdateRecord(record.id, { customFlag: e.target.value })}
+                      className={`flex-1 max-w-[180px] text-xs font-semibold px-2.5 py-1.5 rounded-lg border focus:outline-none transition-colors cursor-pointer ${
+                        record.customFlag === '清算対象' || record.customFlag === '精算対象'
+                          ? 'bg-indigo-50 text-indigo-800 border-indigo-300 shadow-2xs font-bold'
+                          : record.customFlag === '清算済み' || record.customFlag === '精算済み'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
+                          : record.customFlag === '除外'
+                          ? 'bg-slate-100 text-slate-400 border-slate-300 line-through'
+                          : 'bg-white text-slate-600 border-slate-200'
+                      }`}
+                    >
+                      {customFlags.map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdateRecord(record.id, { calculationTarget: !record.calculationTarget })
+                      }
+                      className={`px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-xs font-bold transition-colors cursor-pointer shrink-0 ${
+                        record.calculationTarget
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-200 text-slate-500'
+                      }`}
+                    >
+                      <span>{record.calculationTarget ? '対象 ○' : '対象外 ×'}</span>
+                    </button>
+                  </div>
+
+                  {/* 4段目: メモ / 独自メモ */}
+                  <div className="space-y-1">
+                    {record.memo && (
+                      <p className="text-[11px] text-slate-400 break-words">
+                        MFメモ: {record.memo}
+                      </p>
+                    )}
+                    <input
+                      type="text"
+                      placeholder="独自メモを入力..."
+                      value={record.customMemo || ''}
+                      onChange={(e) => onUpdateRecord(record.id, { customMemo: e.target.value })}
+                      className="w-full text-sm px-2.5 py-1.5 bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg focus:outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* PC用 テーブル本体 (md 以上) */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="bg-slate-100/75 border-b border-slate-200 text-slate-600 font-semibold select-none">
@@ -766,7 +1029,11 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
       </div>
 
       {/* ページネーションフッター */}
-      <div className="p-4 border-t border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500">
+      <div
+        className={`p-3 sm:p-4 border-t border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3 sm:gap-4 text-xs text-slate-500 ${
+          selectedCount > 0 ? 'pb-28 md:pb-4' : ''
+        }`}
+      >
         <div className="flex items-center gap-3">
           <span>
             全 <span className="font-semibold text-slate-700">{sortedRecords.length}</span> 件中{' '}
@@ -778,7 +1045,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 w-full sm:w-auto">
           <div className="flex items-center gap-1.5">
             <span>表示件数:</span>
             <select
@@ -801,7 +1068,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               type="button"
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="p-1 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
+              className="p-1.5 sm:p-1 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
               title="前のページ (h / ←)"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -813,7 +1080,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               type="button"
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage >= totalPages}
-              className="p-1 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
+              className="p-1.5 sm:p-1 rounded-md bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white cursor-pointer"
               title="次のページ (l / →)"
             >
               <ChevronRight className="w-4 h-4" />
@@ -821,6 +1088,91 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           </div>
         </div>
       </div>
+
+      {/* モバイル専用: 選択時の画面下部固定 一括操作バー */}
+      {selectedCount > 0 && (
+        <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-indigo-950 text-white px-3 pt-2.5 pb-3 shadow-2xl border-t border-indigo-800 space-y-2 animate-slideUp">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5 font-bold">
+              <Check className="w-4 h-4 text-indigo-300" />
+              <span>{selectedCount} 件選択中</span>
+              <span className="font-mono text-indigo-200">
+                （¥{selectedNetSum.toLocaleString()}）
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] text-indigo-200 hover:text-white bg-white/10 rounded-md cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              解除
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                onBatchUpdateFlag(Array.from(selectedIds), '清算対象');
+                setSelectedIds(new Set());
+              }}
+              className="px-3 py-1.5 text-xs font-bold bg-indigo-500 active:bg-indigo-600 text-white rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              清算対象
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onBatchUpdateFlag(Array.from(selectedIds), '清算済み');
+                setSelectedIds(new Set());
+              }}
+              className="px-3 py-1.5 text-xs font-bold bg-emerald-600 active:bg-emerald-700 text-white rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              清算済み
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onBatchUpdateFlag(Array.from(selectedIds), '除外');
+                setSelectedIds(new Set());
+              }}
+              className="px-3 py-1.5 text-xs font-medium bg-white/15 active:bg-white/25 text-white rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              除外
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onBatchUpdateFlag(Array.from(selectedIds), '未設定');
+                setSelectedIds(new Set());
+              }}
+              className="px-3 py-1.5 text-xs font-medium bg-white/10 active:bg-white/20 text-indigo-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              未設定
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onBatchToggleCalcTarget(Array.from(selectedIds), true);
+                setSelectedIds(new Set());
+              }}
+              className="px-2.5 py-1.5 text-xs bg-white/10 active:bg-white/20 text-indigo-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              対象 ○
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onBatchToggleCalcTarget(Array.from(selectedIds), false);
+                setSelectedIds(new Set());
+              }}
+              className="px-2.5 py-1.5 text-xs bg-white/10 active:bg-white/20 text-indigo-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              対象外 ×
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

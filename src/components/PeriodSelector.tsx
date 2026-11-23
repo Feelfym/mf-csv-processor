@@ -49,21 +49,21 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
   };
 
   return (
-    <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-4">
+    <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-3 sm:gap-4">
       {/* 期間選択セレクト */}
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+      <div className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-[200px]">
+        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
           <Calendar className="w-4 h-4" />
         </div>
-        <div>
-          <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">
+        <div className="min-w-0 flex-1">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">
             対象期間の絞り込み
           </span>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex flex-wrap items-center gap-2 mt-0.5">
             <select
               value={selectedPeriod}
               onChange={(e) => onSelectPeriod(e.target.value)}
-              className="font-bold text-sm text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg py-1 px-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
+              className="font-bold text-sm text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg py-1.5 sm:py-1 px-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer max-w-full"
             >
               {periodOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -77,7 +77,7 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
               <button
                 type="button"
                 onClick={handleDelete}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2 py-1.5 sm:py-1 text-xs text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer"
                 title={`${currentOption?.label} のデータを一括削除`}
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -90,8 +90,8 @@ export const PeriodSelector: React.FC<PeriodSelectorProps> = ({
       </div>
 
       {/* 前月 / 翌月 ナビゲーション & 件数バッジ */}
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-slate-500 hidden sm:inline">
+      <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+        <span className="text-xs text-slate-500">
           表示中: <strong className="text-slate-800 font-semibold">{filteredCount.toLocaleString()}</strong> / {records.length.toLocaleString()} 件
         </span>
 
