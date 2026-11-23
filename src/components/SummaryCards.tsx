@@ -48,80 +48,58 @@ export const SummaryCards: React.FC<SummaryCardsProps> = React.memo(({
       {/* メイン統計カード（スマホでは2×2、PCでは4列） */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* 総支出 */}
-        <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[11px] sm:text-xs font-medium text-slate-500 flex items-center gap-1">
-              <TrendingDown className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-              <span className="truncate">総支出（振替除）</span>
-            </p>
-            <p className="text-lg sm:text-2xl font-bold text-slate-900 mt-1 sm:mt-1.5 tracking-tight truncate">
-              ¥{totalExpense.toLocaleString()}
-            </p>
-            <p className="text-[11px] text-slate-400 mt-0.5">{validExpenses.length} 件の支出</p>
-          </div>
-          <div className="hidden sm:flex w-12 h-12 rounded-xl bg-rose-50 text-rose-600 items-center justify-center font-bold shrink-0">
-            出
-          </div>
+        <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+          <p className="text-[11px] sm:text-xs font-medium text-slate-500 flex items-center gap-1">
+            <TrendingDown className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+            <span className="truncate">総支出（振替除）</span>
+          </p>
+          <p className="text-lg sm:text-2xl font-bold text-slate-900 mt-1 sm:mt-1.5 tracking-tight truncate">
+            ¥{totalExpense.toLocaleString()}
+          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">{validExpenses.length} 件の支出</p>
         </div>
 
         {/* 総収入 */}
-        <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[11px] sm:text-xs font-medium text-slate-500 flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              <span className="truncate">総収入（振替除）</span>
-            </p>
-            <p className="text-lg sm:text-2xl font-bold text-slate-900 mt-1 sm:mt-1.5 tracking-tight truncate">
-              ¥{totalIncome.toLocaleString()}
-            </p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              {validIncomes.length} 件の収入
-            </p>
-          </div>
-          <div className="hidden sm:flex w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 items-center justify-center font-bold shrink-0">
-            入
-          </div>
+        <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+          <p className="text-[11px] sm:text-xs font-medium text-slate-500 flex items-center gap-1">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            <span className="truncate">総収入（振替除）</span>
+          </p>
+          <p className="text-lg sm:text-2xl font-bold text-slate-900 mt-1 sm:mt-1.5 tracking-tight truncate">
+            ¥{totalIncome.toLocaleString()}
+          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">{validIncomes.length} 件の収入</p>
         </div>
 
         {/* 収支差額 */}
-        <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[11px] sm:text-xs font-medium text-slate-500 flex items-center gap-1">
-              <Layers className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-              <span>収支差額</span>
-            </p>
-            <p
-              className={`text-lg sm:text-2xl font-bold mt-1 sm:mt-1.5 tracking-tight truncate ${
-                totalIncome - totalExpense >= 0 ? 'text-emerald-600' : 'text-rose-600'
-              }`}
-            >
-              ¥{(totalIncome - totalExpense).toLocaleString()}
-            </p>
-            <p className="text-[11px] text-slate-400 mt-0.5">全 {records.length} 件</p>
-          </div>
-          <div className="hidden sm:flex w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 items-center justify-center font-bold shrink-0">
-            差
-          </div>
+        <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+          <p className="text-[11px] sm:text-xs font-medium text-slate-500 flex items-center gap-1">
+            <Layers className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+            <span>収支差額</span>
+          </p>
+          <p
+            className={`text-lg sm:text-2xl font-bold mt-1 sm:mt-1.5 tracking-tight truncate ${
+              totalIncome - totalExpense >= 0 ? 'text-emerald-600' : 'text-rose-600'
+            }`}
+          >
+            ¥{(totalIncome - totalExpense).toLocaleString()}
+          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">全 {records.length} 件</p>
         </div>
 
         {/* フラグ付き明細の件数 */}
-        <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[11px] sm:text-xs font-medium text-slate-500 flex items-center gap-1">
-              <Tag className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span>フラグ設定済</span>
-            </p>
-            <p className="text-lg sm:text-2xl font-bold text-slate-900 mt-1 sm:mt-1.5 tracking-tight truncate">
-              {records.filter((r) => r.customFlag && r.customFlag !== '未設定').length}{' '}
-              <span className="text-xs sm:text-sm font-normal text-slate-500">/ {records.length}</span>
-            </p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              未設定: {records.filter((r) => !r.customFlag || r.customFlag === '未設定').length} 件
-            </p>
-          </div>
-          <div className="hidden sm:flex w-12 h-12 rounded-xl bg-amber-50 text-amber-600 items-center justify-center font-bold shrink-0">
-            旗
-          </div>
+        <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+          <p className="text-[11px] sm:text-xs font-medium text-slate-500 flex items-center gap-1">
+            <Tag className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            <span>フラグ設定済</span>
+          </p>
+          <p className="text-lg sm:text-2xl font-bold text-slate-900 mt-1 sm:mt-1.5 tracking-tight truncate">
+            {records.filter((r) => r.customFlag && r.customFlag !== '未設定').length}{' '}
+            <span className="text-xs sm:text-sm font-normal text-slate-500">/ {records.length}</span>
+          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            未設定: {records.filter((r) => !r.customFlag || r.customFlag === '未設定').length} 件
+          </p>
         </div>
       </div>
 
