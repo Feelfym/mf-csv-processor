@@ -102,7 +102,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="hidden sm:inline">MF CSV Processor</span>
               </h1>
               <span className="hidden sm:inline-block text-xs bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full whitespace-nowrap">
-                v1.3
+                v1.31
               </span>
               {fileName && (
                 storageError ? (
