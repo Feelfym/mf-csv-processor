@@ -127,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="hidden sm:inline">MF CSV Processor</span>
               </h1>
               <span className="hidden sm:inline-block text-xs bg-emerald-100 text-emerald-800 font-medium px-2 py-0.5 rounded-full whitespace-nowrap">
-                v1.32
+                v1.33
               </span>
               {fileName && (
                 storageError ? (
@@ -143,7 +143,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <button
                     type="button"
                     onClick={onManualSync}
-                    title={syncError || 'クリックしてクラウドと手動同期'}
+                    title={syncError || 'リアルタイム同期中（クリックして手動同期）'}
                     className={`hidden md:inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border whitespace-nowrap cursor-pointer transition-colors ${
                       syncStatus === 'error'
                         ? 'text-rose-700 bg-rose-50 border-rose-300 font-bold'

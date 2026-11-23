@@ -1,6 +1,7 @@
 import {
   doc,
   getDoc,
+  onSnapshot,
   collection,
   getDocs,
   writeBatch,
@@ -128,6 +129,29 @@ export const fetchCloudMeta = async (uid: string): Promise<CloudMeta | null> => 
   const snap = await getDoc(metaRef);
   if (!snap.exists()) return null;
   return snap.data() as CloudMeta;
+};
+
+/**
+ * クラウド側のメタデータ更新をリアルタイム監視（他端末の変更を即時検知）
+ */
+export const subscribeCloudMeta = (
+  uid: string,
+  onUpdate: (meta: CloudMeta) => void,
+  onError?: (err: Error) => void
+): (() => void) => {
+  if (!db) return () => {};
+  const metaRef = doc(db, 'users', uid, 'meta', 'state');
+  return onSnapshot(
+    metaRef,
+    (snap) => {
+      // ローカル書き込み直後の楽観的スナップショットはスキップ
+      if (!snap.exists() || snap.metadata.hasPendingWrites) return;
+      onUpdate(snap.data() as CloudMeta);
+    },
+    (err) => {
+      if (onError) onError(err);
+    }
+  );
 };
 
 /**

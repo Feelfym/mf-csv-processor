@@ -43,6 +43,7 @@ import {
 } from './utils/firebase';
 import {
   fetchCloudMeta,
+  subscribeCloudMeta,
   loadCloudData,
   saveCloudData,
   clearCloudSyncCache,
@@ -117,6 +118,7 @@ export function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [cloudUser, setCloudUser] = useState<FirebaseUser | null>(null);
+  const [cloudReadyUid, setCloudReadyUid] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -132,6 +134,8 @@ export function App() {
   const skipNextCloudPushRef = useRef(false);
   const lastCloudCheckAtRef = useRef(0);
   const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPullingFromCloudRef = useRef(false);
+  const pendingPullTimestampRef = useRef(0);
 
   // 初回マウントフラグ（初回ロード時の上書き保存防止）
   const isInitialMount = useRef(true);
@@ -332,14 +336,17 @@ export function App() {
 
   // ===== Firebase クラウド同期 =====
   const applyLoadedCloudData = useCallback(
-    (loaded: Awaited<ReturnType<typeof loadCloudData>>) => {
+    (
+      loaded: Awaited<ReturnType<typeof loadCloudData>>,
+      options: { preserveView?: boolean } = {}
+    ) => {
       if (!loaded) return;
+      const hadRecords = recordsRef.current.length > 0;
       skipNextCloudPushRef.current = true;
       recordsRef.current = loaded.records;
       fileNameRef.current = loaded.fileName;
       rulesRef.current = loaded.rules;
       settingsRef.current = loaded.settings || settingsRef.current;
-      selectedPeriodRef.current = loaded.selectedPeriod || 'ALL';
 
       setRecords(loaded.records);
       setFileName(loaded.fileName);
@@ -351,7 +358,11 @@ export function App() {
         setSettings(loaded.settings);
         saveSettings(loaded.settings);
       }
-      setSelectedPeriod(loaded.selectedPeriod || 'ALL');
+      if (!options.preserveView || !hadRecords) {
+        const nextPeriod = loaded.selectedPeriod || 'ALL';
+        selectedPeriodRef.current = nextPeriod;
+        setSelectedPeriod(nextPeriod);
+      }
       setLastCloudSyncAt(loaded.updatedAt);
     },
     []
@@ -394,6 +405,7 @@ export function App() {
 
       if (!user) {
         isCloudReadyRef.current = false;
+        setCloudReadyUid(null);
         setSyncStatus('idle');
         setSyncError(null);
         clearCloudSyncCache();
@@ -401,6 +413,7 @@ export function App() {
       }
 
       isCloudReadyRef.current = false;
+      setCloudReadyUid(null);
       setSyncStatus('syncing');
       setSyncError(null);
 
@@ -461,6 +474,7 @@ export function App() {
         }
 
         isCloudReadyRef.current = true;
+        setCloudReadyUid(user.uid);
         lastCloudCheckAtRef.current = Date.now();
       } catch (err: any) {
         console.error('Initial cloud sync failed:', err);
@@ -472,6 +486,75 @@ export function App() {
 
     return () => unsubscribe();
   }, [applyLoadedCloudData, pushToCloud]);
+
+  // リアルタイム同期：meta/state の更新を監視し、別端末からの変更を即時反映
+  useEffect(() => {
+    if (!isFirebaseConfigured || !cloudReadyUid) return;
+
+    let cancelled = false;
+
+    const pullLatestFromCloud = async (uid: string) => {
+      if (isPullingFromCloudRef.current) return;
+      isPullingFromCloudRef.current = true;
+      setSyncStatus('syncing');
+      setSyncError(null);
+
+      try {
+        while (!cancelled) {
+          const targetTs = pendingPullTimestampRef.current;
+          const loaded = await loadCloudData(uid);
+          if (cancelled) return;
+          if (loaded) {
+            applyLoadedCloudData(loaded, { preserveView: true });
+            showToast('info', `別端末の変更（${loaded.records.length} 件）をリアルタイム同期しました`);
+          }
+          // ダウンロード中にさらに新しい更新が来ていればもう一度だけ取り込む
+          if (
+            pendingPullTimestampRef.current <= targetTs ||
+            (loaded && pendingPullTimestampRef.current <= loaded.updatedAt)
+          ) {
+            break;
+          }
+        }
+        if (!cancelled) {
+          setSyncStatus('synced');
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          console.error('Realtime cloud pull failed:', err);
+          setSyncStatus('error');
+          setSyncError(err?.message || 'リアルタイム同期に失敗しました');
+        }
+      } finally {
+        isPullingFromCloudRef.current = false;
+      }
+    };
+
+    const unsubscribe = subscribeCloudMeta(
+      cloudReadyUid,
+      (meta) => {
+        if (cancelled) return;
+        if (!meta || meta.deviceId === getDeviceId()) return;
+        if (meta.updatedAt <= getLastCloudSyncAt()) return;
+        // この端末で送信待ちの編集がある場合は上書き衝突を避ける
+        if (cloudSaveTimerRef.current) return;
+
+        pendingPullTimestampRef.current = Math.max(
+          pendingPullTimestampRef.current,
+          meta.updatedAt
+        );
+        pullLatestFromCloud(cloudReadyUid);
+      },
+      (err) => {
+        console.warn('Realtime cloud meta subscription error:', err);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [cloudReadyUid, applyLoadedCloudData]);
 
   // ログイン中のデータ変更を 1.5 秒デバウンスで自動差分保存
   useEffect(() => {
@@ -485,6 +568,7 @@ export function App() {
 
     if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
     cloudSaveTimerRef.current = setTimeout(() => {
+      cloudSaveTimerRef.current = null;
       const currentUser = cloudUserRef.current;
       if (currentUser && isCloudReadyRef.current) {
         pushToCloud(currentUser.uid, false);
@@ -492,7 +576,10 @@ export function App() {
     }, 1500);
 
     return () => {
-      if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
+      if (cloudSaveTimerRef.current) {
+        clearTimeout(cloudSaveTimerRef.current);
+        cloudSaveTimerRef.current = null;
+      }
     };
   }, [records, rules, settings, fileName, selectedPeriod, pushToCloud]);
 
@@ -514,18 +601,29 @@ export function App() {
       }
 
       if (document.visibilityState === 'visible') {
+        if (isPullingFromCloudRef.current || cloudSaveTimerRef.current) return;
         if (Date.now() - lastCloudCheckAtRef.current < 10000) return;
         lastCloudCheckAtRef.current = Date.now();
         try {
           const meta = await fetchCloudMeta(user.uid);
-          if (meta && meta.updatedAt > getLastCloudSyncAt() && meta.deviceId !== getDeviceId()) {
+          if (
+            meta &&
+            meta.updatedAt > getLastCloudSyncAt() &&
+            meta.deviceId !== getDeviceId() &&
+            !isPullingFromCloudRef.current
+          ) {
+            isPullingFromCloudRef.current = true;
             setSyncStatus('syncing');
-            const loaded = await loadCloudData(user.uid);
-            if (loaded) {
-              applyLoadedCloudData(loaded);
-              showToast('info', `別端末の変更（${loaded.records.length} 件）を自動同期しました`);
+            try {
+              const loaded = await loadCloudData(user.uid);
+              if (loaded) {
+                applyLoadedCloudData(loaded, { preserveView: true });
+                showToast('info', `別端末の変更（${loaded.records.length} 件）を自動同期しました`);
+              }
+              setSyncStatus('synced');
+            } finally {
+              isPullingFromCloudRef.current = false;
             }
-            setSyncStatus('synced');
           }
         } catch (err) {
           console.warn('Background cloud check failed:', err);
