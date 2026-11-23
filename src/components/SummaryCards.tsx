@@ -21,12 +21,15 @@ export const SummaryCards: React.FC<SummaryCardsProps> = React.memo(({
   const validIncomes = records.filter((r) => !r.transfer && r.amount > 0);
   const totalIncome = validIncomes.reduce((sum, r) => sum + r.amount, 0);
 
-  // フラグ別集計（未設定以外）
+  // フラグ別集計（未設定以外、清算対象からは振替を除外）
   // 支出（マイナス）と割引・返金（プラス）を相殺した「実質金額（純額）」を算出
   const flagSummaries = customFlags
     .filter((f) => f !== '未設定')
     .map((flag) => {
-      const matching = records.filter((r) => r.customFlag === flag);
+      const isSettlementFlag = flag === '清算対象' || flag === '精算対象';
+      const matching = records.filter(
+        (r) => r.customFlag === flag && (!isSettlementFlag || !r.transfer)
+      );
       // 支出合計（絶対値）
       const expenseSum = matching
         .filter((r) => r.amount < 0)

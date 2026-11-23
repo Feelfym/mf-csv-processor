@@ -89,11 +89,12 @@ export const CategoryChart: React.FC<CategoryChartProps> = React.memo(({
       .sort((a, b) => b.value - a.value);
   }, [categoryExpenses, isFilteringCategory]);
 
-  // フラグ別ビューの集計（大項目フィルター等を反映した全レコードからフラグ別の純額を算出）
+  // フラグ別ビューの集計（大項目フィルター等を反映した全レコードからフラグ別の純額を算出、振替は清算対象に含めない）
   const flagData = useMemo(() => {
     const flagMap: { [key: string]: number } = {};
     recordsFilteredExceptFlag.forEach((r) => {
       const flag = r.customFlag || '未設定';
+      if (r.transfer && (flag === '清算対象' || flag === '精算対象')) return;
       if (!flagMap[flag]) flagMap[flag] = 0;
       // 支出（amount < 0）はプラス加算、割引・返金（amount > 0）はマイナス減算
       flagMap[flag] += -r.amount;

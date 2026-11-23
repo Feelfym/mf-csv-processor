@@ -517,6 +517,15 @@ export function App() {
   // 明細の個別更新（参照を安定化してカード/行の不要な再レンダリングを防止）
   const handleUpdateRecord = useCallback(
     (id: string, updates: Partial<MoneyForwardRecord>) => {
+      const target = recordsRef.current.find((r) => r.id === id);
+      if (
+        target?.transfer &&
+        (updates.customFlag === '清算対象' || updates.customFlag === '精算対象')
+      ) {
+        showToast('info', '振替レコードは清算対象に設定できません');
+        return;
+      }
+
       const label =
         'customMemo' in updates
           ? 'メモの編集'
@@ -533,21 +542,45 @@ export function App() {
     [commitRecords]
   );
 
-  // 一括フラグ更新
+  // 一括フラグ更新（振替レコードは清算対象に設定しない）
   const handleBatchUpdateFlag = (selectedIds: string[], newFlag: string) => {
     const idSet = new Set(selectedIds);
+    const isSettlementFlag = newFlag === '清算対象' || newFlag === '精算対象';
+    let skippedTransfers = 0;
+    let updatedCount = 0;
+
     commitRecords(
-      (prev) => prev.map((r) => (idSet.has(r.id) ? { ...r, customFlag: newFlag } : r)),
+      (prev) =>
+        prev.map((r) => {
+          if (!idSet.has(r.id)) return r;
+          if (isSettlementFlag && r.transfer) {
+            skippedTransfers++;
+            return r;
+          }
+          updatedCount++;
+          return { ...r, customFlag: newFlag };
+        }),
       `${selectedIds.length} 件のフラグ変更`
     );
+
     const label = newFlag === '除外' ? '対象外（除外）' : newFlag;
-    showToast('success', `${selectedIds.length} 件を「${label}」に変更しました`, undoAction);
+    if (updatedCount === 0 && skippedTransfers > 0) {
+      showToast('info', '振替レコードは清算対象に設定できません');
+    } else if (skippedTransfers > 0) {
+      showToast(
+        'success',
+        `${updatedCount} 件を「${label}」に変更しました（振替 ${skippedTransfers} 件はスキップ）`,
+        undoAction
+      );
+    } else {
+      showToast('success', `${updatedCount} 件を「${label}」に変更しました`, undoAction);
+    }
   };
 
   // 選択中/表示中の「清算対象」を一括で「清算済み」に変更
   const handleMarkAsSettled = (_count?: number, sum?: number) => {
     const targetRecords = fullyFilteredRecords.filter(
-      (r) => r.customFlag === '清算対象' || r.customFlag === '精算対象'
+      (r) => !r.transfer && (r.customFlag === '清算対象' || r.customFlag === '精算対象')
     );
 
     if (targetRecords.length === 0) {

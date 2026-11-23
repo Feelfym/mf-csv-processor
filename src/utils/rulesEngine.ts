@@ -51,6 +51,10 @@ export const applyRulesToRecord = (
 
   for (const rule of rules) {
     if (evaluateRuleMatch(record, rule)) {
+      // 振替レコードには「清算対象」を自動付与しない
+      if (record.transfer && (rule.applyFlag === '清算対象' || rule.applyFlag === '精算対象')) {
+        continue;
+      }
       return {
         ...record,
         customFlag: rule.applyFlag,
