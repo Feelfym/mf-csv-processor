@@ -74,24 +74,49 @@ const groupRecordsByMonth = (
   return map;
 };
 
+const sanitizeUrl = (url?: string): string => {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
+    return trimmed.slice(0, 2048);
+  }
+  return '';
+};
+
+const sanitizeRule = (rule: AutoRule): AutoRule => ({
+  id: String(rule.id || `rule-${Date.now()}`).slice(0, 128),
+  name: String(rule.name || '').slice(0, 200),
+  targetField: ['content', 'majorCategory', 'mediumCategory', 'institution', 'memo'].includes(
+    rule.targetField
+  )
+    ? rule.targetField
+    : 'content',
+  matchType: ['contains', 'equals', 'startsWith', 'endsWith'].includes(rule.matchType)
+    ? rule.matchType
+    : 'contains',
+  keyword: String(rule.keyword || '').slice(0, 200),
+  applyFlag: String(rule.applyFlag || '未設定').slice(0, 100),
+  enabled: Boolean(rule.enabled),
+});
+
 /**
  * Firestore の undefined フィールドエラーを防ぐためのクリーンアップ
  */
 const sanitizeRecord = (r: MoneyForwardRecord): MoneyForwardRecord => ({
-  id: r.id,
+  id: String(r.id || '').slice(0, 128),
   calculationTarget: Boolean(r.calculationTarget),
-  date: r.date || '',
-  content: r.content || '',
+  date: String(r.date || '').slice(0, 32),
+  content: String(r.content || '').slice(0, 500),
   amount: Number(r.amount) || 0,
   rawAmount: Number(r.rawAmount) || 0,
-  institution: r.institution || '',
-  majorCategory: r.majorCategory || '未分類',
-  mediumCategory: r.mediumCategory || '未分類',
-  memo: r.memo || '',
+  institution: String(r.institution || '').slice(0, 200),
+  majorCategory: String(r.majorCategory || '未分類').slice(0, 100),
+  mediumCategory: String(r.mediumCategory || '未分類').slice(0, 100),
+  memo: String(r.memo || '').slice(0, 1000),
   transfer: Boolean(r.transfer),
-  mfId: r.mfId || '',
-  customFlag: r.customFlag || '未設定',
-  customMemo: r.customMemo || '',
+  mfId: String(r.mfId || '').slice(0, 128),
+  customFlag: String(r.customFlag || '未設定').slice(0, 100),
+  customMemo: String(r.customMemo || '').slice(0, 2000),
 });
 
 /**
@@ -199,19 +224,22 @@ export const saveCloudData = async (
   // メタデータを更新
   const metaRef = doc(db, 'users', uid, 'meta', 'state');
   const metaDoc: CloudMeta = {
-    fileName: payload.fileName,
+    fileName: payload.fileName ? String(payload.fileName).slice(0, 500) : null,
     selectedPeriod: payload.selectedPeriod || 'ALL',
     settings: {
-      gasWebAppUrl: payload.settings.gasWebAppUrl || '',
-      googleDriveFolderId: payload.settings.googleDriveFolderId || '',
-      notebookLmUrl: payload.settings.notebookLmUrl || '',
-      customFlags: payload.settings.customFlags || [],
+      gasWebAppUrl: sanitizeUrl(payload.settings.gasWebAppUrl),
+      googleDriveFolderId: String(payload.settings.googleDriveFolderId || '').slice(0, 256),
+      notebookLmUrl: sanitizeUrl(payload.settings.notebookLmUrl),
+      customFlags: (payload.settings.customFlags || [])
+        .map((f) => String(f || '').trim().slice(0, 100))
+        .filter(Boolean)
+        .slice(0, 50),
     },
-    rules: payload.rules || [],
-    months: currentMonths,
+    rules: (payload.rules || []).slice(0, 500).map(sanitizeRule),
+    months: currentMonths.slice(0, 240),
     recordCount: sanitizedRecords.length,
     updatedAt: now,
-    deviceId,
+    deviceId: deviceId.slice(0, 128),
   };
   batch.set(metaRef, metaDoc);
 

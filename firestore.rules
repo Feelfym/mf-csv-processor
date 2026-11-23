@@ -1,0 +1,313 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures
+// for the MF CSV Processor web application (Firestore Standard Edition,
+// `(default)` database). All data is strictly private per authenticated
+// Firebase Auth user (Google Sign-In); no parent `users/{userId}` document
+// is created or required.
+//
+// Document: users/{userId}/meta/state
+// Document ID: fixed literal "state"
+// Access: Strictly owner-only (`request.auth.uid == userId`).
+// Fields (all required on create & update, no extraneous fields allowed):
+//   - fileName: string (<= 500 chars) or null - last imported CSV file name
+//   - selectedPeriod: string (1..32 chars, 'ALL' | 'YEAR:YYYY' | 'MONTH:YYYY-MM')
+//   - settings: map (exact keys: gasWebAppUrl, googleDriveFolderId, notebookLmUrl, customFlags)
+//       - gasWebAppUrl: string ('' or http(s):// URL <= 2048 chars)
+//       - googleDriveFolderId: string (<= 256 chars)
+//       - notebookLmUrl: string ('' or http(s):// URL <= 2048 chars)
+//       - customFlags: list of strings (<= 50 items, each 1..100 chars)
+//   - rules: list of AutoRule maps (<= 500 items)
+//       Each AutoRule map:
+//       - id: string (1..128 chars)
+//       - name: string (<= 200 chars)
+//       - targetField: string ('content' | 'majorCategory' | 'mediumCategory' | 'institution' | 'memo')
+//       - matchType: string ('contains' | 'equals' | 'startsWith' | 'endsWith')
+//       - keyword: string (<= 200 chars)
+//       - applyFlag: string (<= 100 chars)
+//       - enabled: bool
+//   - months: list of month ID strings (<= 240 items, 'YYYY-MM' or 'unknown')
+//   - recordCount: int (0..500000) - total synced transaction count
+//   - updatedAt: int (epoch ms, 1..4102444800000) - client sync timestamp
+//   - deviceId: string (1..128 chars) - client device identifier
+//
+// Collection: users/{userId}/months/{monthId}
+// Document ID: 'YYYY-MM' (months 01..12) or 'unknown'
+// Access: Strictly owner-only (`request.auth.uid == userId`).
+//         Supports read (get & list), create, update, and delete.
+// Fields (all required on create & update, no extraneous fields allowed):
+//   - month: string (immutable on update; must equal {monthId})
+//   - records: list of MoneyForwardRecord maps (<= 1500 items per month shard)
+//       Each MoneyForwardRecord map (sanitized via sanitizeRecord):
+//       - id: string (1..128 chars)
+//       - calculationTarget: bool
+//       - date: string (<= 32 chars)
+//       - content: string (<= 500 chars)
+//       - amount: number (-1e12..1e12)
+//       - rawAmount: number (-1e12..1e12)
+//       - institution: string (<= 200 chars)
+//       - majorCategory: string (<= 100 chars)
+//       - mediumCategory: string (<= 100 chars)
+//       - memo: string (<= 1000 chars)
+//       - transfer: bool
+//       - mfId: string (<= 128 chars)
+//       - customFlag: string (<= 100 chars)
+//       - customMemo: string (<= 2000 chars)
+//   - updatedAt: int (epoch ms, 1..4102444800000) - client sync timestamp
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the request comes from an authenticated user
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated user owns the target userId path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validate that the document contains all required fields
+    function hasRequiredFields(data, fields) {
+      return data.keys().hasAll(fields);
+    }
+
+    // Validate that the document contains only allowed fields
+    function hasOnlyAllowedFields(data, fields) {
+      return data.keys().hasOnly(fields);
+    }
+
+    // Ensure specified immutable fields are not modified on update
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Validate HTTP(S) URL format
+    function isValidUrl(url) {
+      return url is string &&
+             url.size() <= 2048 &&
+             (url.matches('^https://.*') || url.matches('^http://.*'));
+    }
+
+    // Validate an optional URL field (empty string or valid HTTP(S) URL)
+    function isValidOptionalUrl(url) {
+      return url is string && (url == '' || isValidUrl(url));
+    }
+
+    // Validate that a value is a list within the maximum item limit
+    function isValidList(listVal, maxSize) {
+      return listVal is list && listVal.size() <= maxSize;
+    }
+
+    // Validate epoch millisecond timestamp (integer between 1970 and 2100)
+    function isValidEpochMs(ms) {
+      return ms is int && ms > 0 && ms <= 4102444800000;
+    }
+
+    // Validate month shard ID ('YYYY-MM' with valid month 01-12, or 'unknown')
+    function isValidMonthId(monthId) {
+      return monthId is string &&
+             (monthId == 'unknown' || monthId.matches('^\\d{4}-(0[1-9]|1[0-2])$'));
+    }
+
+    // Validate selectedPeriod ('ALL', 'YEAR:YYYY', or 'MONTH:YYYY-MM')
+    function isValidSelectedPeriod(period) {
+      return period is string &&
+             period.size() >= 1 &&
+             period.size() <= 32 &&
+             period.matches('^(ALL|YEAR:\\d{4}|MONTH:\\d{4}-(0[1-9]|1[0-2]))$');
+    }
+
+    // Validate a single custom flag string
+    function isValidFlagString(flag) {
+      return flag is string && flag.size() >= 1 && flag.size() <= 100;
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update rules)
+    // ===============================================================
+
+    // Validate AppSettings map inside users/{userId}/meta/state
+    function isValidSettings(settings) {
+      let allowedKeys = [
+        'gasWebAppUrl',
+        'googleDriveFolderId',
+        'notebookLmUrl',
+        'customFlags'
+      ];
+      return settings is map &&
+             hasRequiredFields(settings, allowedKeys) &&
+             hasOnlyAllowedFields(settings, allowedKeys) &&
+             isValidOptionalUrl(settings.gasWebAppUrl) &&
+             settings.googleDriveFolderId is string &&
+             settings.googleDriveFolderId.size() <= 256 &&
+             isValidOptionalUrl(settings.notebookLmUrl) &&
+             isValidList(settings.customFlags, 50) &&
+             (settings.customFlags.size() == 0 || (
+               isValidFlagString(settings.customFlags[0]) &&
+               isValidFlagString(settings.customFlags[settings.customFlags.size() - 1])
+             ));
+    }
+
+    // Validate a single AutoRule object (used for list boundary inspection)
+    function isValidAutoRule(rule) {
+      let allowedKeys = [
+        'id',
+        'name',
+        'targetField',
+        'matchType',
+        'keyword',
+        'applyFlag',
+        'enabled'
+      ];
+      return rule is map &&
+             hasRequiredFields(rule, allowedKeys) &&
+             hasOnlyAllowedFields(rule, allowedKeys) &&
+             rule.id is string && rule.id.size() >= 1 && rule.id.size() <= 128 &&
+             rule.name is string && rule.name.size() <= 200 &&
+             rule.targetField in ['content', 'majorCategory', 'mediumCategory', 'institution', 'memo'] &&
+             rule.matchType in ['contains', 'equals', 'startsWith', 'endsWith'] &&
+             rule.keyword is string && rule.keyword.size() <= 200 &&
+             rule.applyFlag is string && rule.applyFlag.size() <= 100 &&
+             rule.enabled is bool;
+    }
+
+    // Validate users/{userId}/meta/state document
+    function isValidMetaState(data) {
+      let allowedKeys = [
+        'fileName',
+        'selectedPeriod',
+        'settings',
+        'rules',
+        'months',
+        'recordCount',
+        'updatedAt',
+        'deviceId'
+      ];
+      return hasRequiredFields(data, allowedKeys) &&
+             hasOnlyAllowedFields(data, allowedKeys) &&
+             (data.fileName == null || (data.fileName is string && data.fileName.size() <= 500)) &&
+             isValidSelectedPeriod(data.selectedPeriod) &&
+             isValidSettings(data.settings) &&
+             isValidList(data.rules, 500) &&
+             (data.rules.size() == 0 || (
+               isValidAutoRule(data.rules[0]) &&
+               isValidAutoRule(data.rules[data.rules.size() - 1])
+             )) &&
+             isValidList(data.months, 240) &&
+             (data.months.size() == 0 || (
+               isValidMonthId(data.months[0]) &&
+               isValidMonthId(data.months[data.months.size() - 1])
+             )) &&
+             data.recordCount is int &&
+             data.recordCount >= 0 &&
+             data.recordCount <= 500000 &&
+             isValidEpochMs(data.updatedAt) &&
+             data.deviceId is string &&
+             data.deviceId.size() >= 1 &&
+             data.deviceId.size() <= 128;
+    }
+
+    // Validate a single MoneyForwardRecord object (used for list boundary inspection)
+    function isValidRecord(rec) {
+      let allowedKeys = [
+        'id',
+        'calculationTarget',
+        'date',
+        'content',
+        'amount',
+        'rawAmount',
+        'institution',
+        'majorCategory',
+        'mediumCategory',
+        'memo',
+        'transfer',
+        'mfId',
+        'customFlag',
+        'customMemo'
+      ];
+      return rec is map &&
+             hasRequiredFields(rec, allowedKeys) &&
+             hasOnlyAllowedFields(rec, allowedKeys) &&
+             rec.id is string && rec.id.size() >= 1 && rec.id.size() <= 128 &&
+             rec.calculationTarget is bool &&
+             rec.date is string && rec.date.size() <= 32 &&
+             rec.content is string && rec.content.size() <= 500 &&
+             rec.amount is number && rec.amount >= -1000000000000 && rec.amount <= 1000000000000 &&
+             rec.rawAmount is number && rec.rawAmount >= -1000000000000 && rec.rawAmount <= 1000000000000 &&
+             rec.institution is string && rec.institution.size() <= 200 &&
+             rec.majorCategory is string && rec.majorCategory.size() <= 100 &&
+             rec.mediumCategory is string && rec.mediumCategory.size() <= 100 &&
+             rec.memo is string && rec.memo.size() <= 1000 &&
+             rec.transfer is bool &&
+             rec.mfId is string && rec.mfId.size() <= 128 &&
+             rec.customFlag is string && rec.customFlag.size() <= 100 &&
+             rec.customMemo is string && rec.customMemo.size() <= 2000;
+    }
+
+    // Validate users/{userId}/months/{monthId} document
+    function isValidMonthDoc(data, monthId) {
+      let allowedKeys = [
+        'month',
+        'records',
+        'updatedAt'
+      ];
+      return hasRequiredFields(data, allowedKeys) &&
+             hasOnlyAllowedFields(data, allowedKeys) &&
+             isValidMonthId(data.month) &&
+             data.month == monthId &&
+             isValidList(data.records, 1500) &&
+             (data.records.size() == 0 || (
+               isValidRecord(data.records[0]) &&
+               isValidRecord(data.records[data.records.size() - 1])
+             )) &&
+             isValidEpochMs(data.updatedAt);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // Root user document is not used by the application; keep denied.
+      allow read, write: if false;
+
+      // Per-user application metadata and settings state
+      match /meta/state {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidMetaState(request.resource.data);
+        allow update: if isOwner(userId) && isValidMetaState(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      // Per-user monthly transaction shards (supports collection listing and deletion)
+      match /months/{monthId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         isValidMonthId(monthId) &&
+                         isValidMonthDoc(request.resource.data, monthId);
+        allow update: if isOwner(userId) &&
+                         isValidMonthId(monthId) &&
+                         isValidMonthDoc(request.resource.data, monthId) &&
+                         areImmutableFieldsUnchanged(['month']);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Default deny for all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

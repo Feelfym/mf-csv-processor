@@ -1,0 +1,20 @@
+{
+  "firestore": {
+    "database": "(default)",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "MF CSV Processor",
+        "supportEmail": "tomoya.noguchi@gmail.com",
+        "authorizedRedirectUris": [
+          "https://mf-csv-processor.firebaseapp.com/__/auth/handler",
+          "https://feelfym.github.io/mf-csv-processor/",
+          "http://localhost:5173"
+        ]
+      }
+    }
+  }
+}
