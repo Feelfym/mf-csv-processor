@@ -61,36 +61,37 @@ interface MobileRecordCardProps {
 const MobileRecordCard = React.memo<MobileRecordCardProps>(
   ({ record, isSelected, customFlags, onToggleSelect, onUpdateRecord }) => {
     const [popState, setPopState] = useState<{
-      btn: 'settlement' | 'exclude' | 'target';
+      btn: 'settlement' | 'exclude';
       seq: number;
     } | null>(null);
 
-    const triggerPop = (btn: 'settlement' | 'exclude' | 'target') => {
+    const triggerPop = (btn: 'settlement' | 'exclude') => {
       triggerHaptic();
       setPopState((prev) => ({ btn, seq: (prev?.seq ?? 0) + 1 }));
     };
 
     const isExpense = record.amount < 0;
     const isTransfer = record.transfer;
+    const isExcluded = !record.calculationTarget || record.customFlag === '除外';
     const isSettlement =
-      record.customFlag === '清算対象' || record.customFlag === '精算対象';
+      !isExcluded &&
+      (record.customFlag === '清算対象' || record.customFlag === '精算対象');
     const isSettled =
-      record.customFlag === '清算済み' || record.customFlag === '精算済み';
-    const isExcludedFlag = record.customFlag === '除外';
+      !isExcluded &&
+      (record.customFlag === '清算済み' || record.customFlag === '精算済み');
     const isOtherFlag =
+      !isExcluded &&
       Boolean(record.customFlag) &&
       record.customFlag !== '未設定' &&
       !isSettlement &&
-      !isExcludedFlag;
+      !isSettled;
 
-    const leftBorderClass = !record.calculationTarget
-      ? 'border-l-4 border-l-rose-400'
+    const leftBorderClass = isExcluded
+      ? 'border-l-4 border-l-slate-400'
       : isSettlement
       ? 'border-l-4 border-l-indigo-500'
       : isSettled
       ? 'border-l-4 border-l-emerald-500'
-      : isExcludedFlag
-      ? 'border-l-4 border-l-slate-500'
       : 'border-l-4 border-l-transparent';
 
     return (
@@ -98,10 +99,10 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
         className={`p-3.5 space-y-2.5 transition-colors duration-150 ${leftBorderClass} ${
           isSelected
             ? 'bg-indigo-50/50'
-            : isExcludedFlag
-            ? 'bg-slate-50/90'
+            : isExcluded
+            ? 'bg-slate-50/90 opacity-75'
             : 'bg-white'
-        } ${!record.calculationTarget ? 'opacity-65 bg-slate-50/70' : ''}`}
+        }`}
       >
         {/* 1段目: チェックボックス・日付・金融機関 ／ 金額 */}
         <div className="flex items-start justify-between gap-2">
@@ -134,7 +135,7 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
           </div>
           <span
             className={`font-mono text-sm font-bold whitespace-nowrap shrink-0 transition-colors ${
-              isExcludedFlag
+              isExcluded
                 ? 'text-slate-400 line-through'
                 : isExpense
                 ? 'text-slate-900'
@@ -151,7 +152,7 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
         <div className="space-y-1">
           <p
             className={`text-sm font-semibold leading-snug break-words transition-colors ${
-              isExcludedFlag ? 'text-slate-400 line-through' : 'text-slate-800'
+              isExcluded ? 'text-slate-400 line-through' : 'text-slate-800'
             }`}
           >
             {record.content}
@@ -166,8 +167,8 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
           </div>
         </div>
 
-        {/* 3段目: ワンタップ仕分けボタン（押した感アニメーション付き） */}
-        <div className="flex items-center gap-1.5 pt-0.5">
+        {/* 3段目: ワンタップ仕分けボタン（「清算対象」と「対象外」の2択＋その他） */}
+        <div className="flex items-center gap-2 pt-0.5">
           {/* 清算対象 ワンタップトグル */}
           <button
             key={popState?.btn === 'settlement' ? `s-${popState.seq}` : 's'}
@@ -182,7 +183,7 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
               );
             }}
             aria-pressed={isSettlement}
-            className={`flex-1 py-2 px-2 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
+            className={`flex-1 py-2 px-3 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
               popState?.btn === 'settlement' ? 'animate-btn-pop' : ''
             } ${
               isSettlement
@@ -194,51 +195,33 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
             <span>清算対象</span>
           </button>
 
-          {/* 除外フラグ ワンタップトグル */}
+          {/* 対象外（除外＋計算対象外を1ボタンに統合） */}
           <button
             key={popState?.btn === 'exclude' ? `e-${popState.seq}` : 'e'}
             type="button"
             onClick={() => {
               triggerPop('exclude');
-              onUpdateRecord(record.id, {
-                customFlag: isExcludedFlag ? '未設定' : '除外',
-              });
+              onUpdateRecord(
+                record.id,
+                isExcluded
+                  ? { customFlag: '未設定', calculationTarget: true }
+                  : { customFlag: '除外', calculationTarget: false }
+              );
             }}
-            aria-pressed={isExcludedFlag}
-            className={`py-2 px-2.5 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
+            aria-pressed={isExcluded}
+            className={`flex-1 py-2 px-3 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
               popState?.btn === 'exclude' ? 'animate-btn-pop' : ''
             } ${
-              isExcludedFlag
+              isExcluded
                 ? 'bg-slate-700 text-white border-slate-800 shadow-sm ring-2 ring-slate-500/35'
                 : 'bg-white text-slate-600 border-slate-300 border-b-slate-400/80 hover:bg-slate-50'
             }`}
           >
             <Ban
               className={`w-3.5 h-3.5 shrink-0 ${
-                isExcludedFlag ? 'text-white animate-icon-pop' : 'text-slate-400'
+                isExcluded ? 'text-white animate-icon-pop' : 'text-slate-400'
               }`}
             />
-            <span>除外</span>
-          </button>
-
-          {/* 計算対象外 ワンタップトグル */}
-          <button
-            key={popState?.btn === 'target' ? `t-${popState.seq}` : 't'}
-            type="button"
-            onClick={() => {
-              triggerPop('target');
-              onUpdateRecord(record.id, { calculationTarget: !record.calculationTarget });
-            }}
-            aria-pressed={!record.calculationTarget}
-            className={`py-2 px-2.5 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
-              popState?.btn === 'target' ? 'animate-btn-pop' : ''
-            } ${
-              !record.calculationTarget
-                ? 'bg-rose-600 text-white border-rose-700 shadow-sm ring-2 ring-rose-500/30'
-                : 'bg-white text-slate-500 border-slate-200 border-b-slate-300 hover:bg-slate-50'
-            }`}
-          >
-            {!record.calculationTarget && <X className="w-3.5 h-3.5 shrink-0 animate-icon-pop" />}
             <span>対象外</span>
           </button>
 
@@ -246,8 +229,14 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
           <select
             aria-label="その他のフラグを選択"
             value={record.customFlag || '未設定'}
-            onChange={(e) => onUpdateRecord(record.id, { customFlag: e.target.value })}
-            className={`max-w-[82px] py-2 px-1.5 rounded-lg border text-[11px] font-semibold focus:outline-none transition-colors cursor-pointer touch-manipulation ${
+            onChange={(e) => {
+              const nextFlag = e.target.value;
+              onUpdateRecord(record.id, {
+                customFlag: nextFlag,
+                calculationTarget: nextFlag !== '除外',
+              });
+            }}
+            className={`max-w-[84px] py-2 px-1.5 rounded-lg border text-[11px] font-semibold focus:outline-none transition-colors cursor-pointer touch-manipulation ${
               isSettled
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
                 : isOtherFlag
@@ -524,19 +513,19 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           onBatchUpdateFlag(Array.from(selectedIds), '清算対象');
           setSelectedIds(new Set());
         } else if (currentRecord) {
-          onUpdateRecord(currentRecord.id, { customFlag: '清算対象' });
+          onUpdateRecord(currentRecord.id, { customFlag: '清算対象', calculationTarget: true });
         }
         return;
       }
 
-      // '2' または 'x' で「除外」に設定
+      // '2' または 'x' で「対象外（除外）」に設定（計算対象も外す）
       if (e.key === '2' || e.key.toLowerCase() === 'x') {
         e.preventDefault();
         if (selectedIds.size > 0) {
           onBatchUpdateFlag(Array.from(selectedIds), '除外');
           setSelectedIds(new Set());
         } else if (currentRecord) {
-          onUpdateRecord(currentRecord.id, { customFlag: '除外' });
+          onUpdateRecord(currentRecord.id, { customFlag: '除外', calculationTarget: false });
         }
         return;
       }
@@ -548,7 +537,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           onBatchUpdateFlag(Array.from(selectedIds), '清算済み');
           setSelectedIds(new Set());
         } else if (currentRecord) {
-          onUpdateRecord(currentRecord.id, { customFlag: '清算済み' });
+          onUpdateRecord(currentRecord.id, { customFlag: '清算済み', calculationTarget: true });
         }
         return;
       }
@@ -560,7 +549,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           onBatchUpdateFlag(Array.from(selectedIds), '未設定');
           setSelectedIds(new Set());
         } else if (currentRecord) {
-          onUpdateRecord(currentRecord.id, { customFlag: '未設定' });
+          onUpdateRecord(
+            currentRecord.id,
+            currentRecord.customFlag === '除外'
+              ? { customFlag: '未設定', calculationTarget: true }
+              : { customFlag: '未設定' }
+          );
         }
         return;
       }
@@ -1120,7 +1114,20 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                     <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <select
                         value={record.customFlag || '未設定'}
-                        onChange={(e) => onUpdateRecord(record.id, { customFlag: e.target.value })}
+                        onChange={(e) => {
+                          const nextFlag = e.target.value;
+                          if (nextFlag === '除外') {
+                            onUpdateRecord(record.id, { customFlag: '除外', calculationTarget: false });
+                          } else if (
+                            nextFlag === '清算対象' ||
+                            nextFlag === '清算済み' ||
+                            record.customFlag === '除外'
+                          ) {
+                            onUpdateRecord(record.id, { customFlag: nextFlag, calculationTarget: true });
+                          } else {
+                            onUpdateRecord(record.id, { customFlag: nextFlag });
+                          }
+                        }}
                         className={`text-xs font-semibold px-2.5 py-1 rounded-lg border focus:outline-none transition-colors cursor-pointer ${
                           record.customFlag === '清算対象' || record.customFlag === '精算対象'
                             ? 'bg-indigo-50 text-indigo-800 border-indigo-300 shadow-2xs font-bold'
@@ -1271,19 +1278,9 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                 onBatchUpdateFlag(Array.from(selectedIds), '清算対象');
                 setSelectedIds(new Set());
               }}
-              className="px-3 py-1.5 text-xs font-bold bg-indigo-500 active:bg-indigo-600 text-white rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+              className="flex-1 px-3 py-2 text-xs font-bold bg-indigo-500 active:bg-indigo-600 text-white rounded-lg whitespace-nowrap cursor-pointer touch-manipulation"
             >
               清算対象
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onBatchUpdateFlag(Array.from(selectedIds), '清算済み');
-                setSelectedIds(new Set());
-              }}
-              className="px-3 py-1.5 text-xs font-bold bg-emerald-600 active:bg-emerald-700 text-white rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              清算済み
             </button>
             <button
               type="button"
@@ -1291,9 +1288,19 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                 onBatchUpdateFlag(Array.from(selectedIds), '除外');
                 setSelectedIds(new Set());
               }}
-              className="px-3 py-1.5 text-xs font-medium bg-white/15 active:bg-white/25 text-white rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+              className="flex-1 px-3 py-2 text-xs font-bold bg-slate-600 active:bg-slate-700 text-white rounded-lg whitespace-nowrap cursor-pointer touch-manipulation"
             >
-              除外
+              対象外
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onBatchUpdateFlag(Array.from(selectedIds), '清算済み');
+                setSelectedIds(new Set());
+              }}
+              className="px-3 py-2 text-xs font-bold bg-emerald-600 active:bg-emerald-700 text-white rounded-lg whitespace-nowrap shrink-0 cursor-pointer touch-manipulation"
+            >
+              清算済み
             </button>
             <button
               type="button"
@@ -1301,29 +1308,9 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                 onBatchUpdateFlag(Array.from(selectedIds), '未設定');
                 setSelectedIds(new Set());
               }}
-              className="px-3 py-1.5 text-xs font-medium bg-white/10 active:bg-white/20 text-indigo-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
+              className="px-3 py-2 text-xs font-medium bg-white/10 active:bg-white/20 text-indigo-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer touch-manipulation"
             >
               未設定
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onBatchToggleCalcTarget(Array.from(selectedIds), true);
-                setSelectedIds(new Set());
-              }}
-              className="px-2.5 py-1.5 text-xs bg-white/10 active:bg-white/20 text-indigo-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              対象 ○
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onBatchToggleCalcTarget(Array.from(selectedIds), false);
-                setSelectedIds(new Set());
-              }}
-              className="px-2.5 py-1.5 text-xs bg-white/10 active:bg-white/20 text-indigo-100 rounded-lg whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              対象外 ×
             </button>
           </div>
         </div>

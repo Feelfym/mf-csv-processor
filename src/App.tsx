@@ -527,14 +527,28 @@ export function App() {
     [commitRecords]
   );
 
-  // 一括フラグ更新
+  // 一括フラグ更新（「除外」は計算対象外、「清算対象/清算済み」は計算対象に連動）
   const handleBatchUpdateFlag = (selectedIds: string[], newFlag: string) => {
     const idSet = new Set(selectedIds);
     commitRecords(
-      (prev) => prev.map((r) => (idSet.has(r.id) ? { ...r, customFlag: newFlag } : r)),
+      (prev) =>
+        prev.map((r) => {
+          if (!idSet.has(r.id)) return r;
+          if (newFlag === '除外') {
+            return { ...r, customFlag: '除外', calculationTarget: false };
+          }
+          if (newFlag === '清算対象' || newFlag === '清算済み') {
+            return { ...r, customFlag: newFlag, calculationTarget: true };
+          }
+          if (newFlag === '未設定' && r.customFlag === '除外') {
+            return { ...r, customFlag: '未設定', calculationTarget: true };
+          }
+          return { ...r, customFlag: newFlag };
+        }),
       `${selectedIds.length} 件のフラグ変更`
     );
-    showToast('success', `${selectedIds.length} 件のフラグを「${newFlag}」に変更しました`, undoAction);
+    const label = newFlag === '除外' ? '対象外（除外）' : newFlag;
+    showToast('success', `${selectedIds.length} 件を「${label}」に変更しました`, undoAction);
   };
 
   // 一括計算対象切り替え
