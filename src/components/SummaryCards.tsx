@@ -8,7 +8,7 @@ interface SummaryCardsProps {
   onMarkAsSettled?: (count: number, sum: number) => void;
 }
 
-export const SummaryCards: React.FC<SummaryCardsProps> = ({
+export const SummaryCards: React.FC<SummaryCardsProps> = React.memo(({
   records,
   customFlags,
   onMarkAsSettled,
@@ -191,4 +191,4 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
       )}
     </div>
   );
-};
+});

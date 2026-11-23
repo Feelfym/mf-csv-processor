@@ -34,7 +34,7 @@ const COLORS = [
   '#6366f1', // indigo
 ];
 
-export const CategoryChart: React.FC<CategoryChartProps> = ({
+export const CategoryChart: React.FC<CategoryChartProps> = React.memo(({
   records,
   allPeriodRecords,
   filters,
@@ -250,6 +250,7 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
                     outerRadius={80}
                     paddingAngle={2}
                     dataKey="value"
+                    isAnimationActive={false}
                     onClick={(entry) => handleCategoryClick(entry.name)}
                     className="cursor-pointer"
                   >
@@ -287,7 +288,7 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
                   <Tooltip
                     formatter={(value: any) => [`¥${Number(value || 0).toLocaleString()}`, '金額']}
                   />
-                  <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} isAnimationActive={false}>
                     {flagData.map((entry, index) => {
                       const isSelected = filters.selectedFlag === entry.name;
                       return (
@@ -353,4 +354,4 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
       )}
     </div>
   );
-};
+});

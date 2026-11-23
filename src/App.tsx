@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } from 'react';
 import { MoneyForwardRecord, AppSettings, AutoRule, FilterOptions } from './types';
 import {
   loadSettings,
@@ -108,56 +108,62 @@ export function App() {
   const redoStackRef = useRef<HistoryEntry[]>([]);
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
 
-  const syncHistoryState = () =>
-    setHistoryState({
-      canUndo: undoStackRef.current.length > 0,
-      canRedo: redoStackRef.current.length > 0,
-    });
+  const syncHistoryState = useCallback(
+    () =>
+      setHistoryState({
+        canUndo: undoStackRef.current.length > 0,
+        canRedo: redoStackRef.current.length > 0,
+      }),
+    []
+  );
 
   /**
    * 履歴に積みながら明細を更新する
    * @param coalesceKey 同じキーの連続操作（メモ入力など）を1つの履歴にまとめる
    */
-  const commitRecords = (
-    next: MoneyForwardRecord[] | ((prev: MoneyForwardRecord[]) => MoneyForwardRecord[]),
-    label: string,
-    options: { coalesceKey?: string; fileName?: string | null } = {}
-  ) => {
-    const prev = recordsRef.current;
-    const nextRecords = typeof next === 'function' ? next(prev) : next;
-    if (nextRecords === prev && options.fileName === undefined) return;
+  const commitRecords = useCallback(
+    (
+      next: MoneyForwardRecord[] | ((prev: MoneyForwardRecord[]) => MoneyForwardRecord[]),
+      label: string,
+      options: { coalesceKey?: string; fileName?: string | null } = {}
+    ) => {
+      const prev = recordsRef.current;
+      const nextRecords = typeof next === 'function' ? next(prev) : next;
+      if (nextRecords === prev && options.fileName === undefined) return;
 
-    const now = Date.now();
-    const last = undoStackRef.current[undoStackRef.current.length - 1];
-    const canCoalesce =
-      options.coalesceKey !== undefined &&
-      last !== undefined &&
-      last.coalesceKey === options.coalesceKey &&
-      now - last.time < COALESCE_MS &&
-      redoStackRef.current.length === 0;
+      const now = Date.now();
+      const last = undoStackRef.current[undoStackRef.current.length - 1];
+      const canCoalesce =
+        options.coalesceKey !== undefined &&
+        last !== undefined &&
+        last.coalesceKey === options.coalesceKey &&
+        now - last.time < COALESCE_MS &&
+        redoStackRef.current.length === 0;
 
-    if (canCoalesce && last) {
-      last.time = now;
-    } else {
-      undoStackRef.current.push({
-        records: prev,
-        fileName: fileNameRef.current,
-        label,
-        coalesceKey: options.coalesceKey,
-        time: now,
-      });
-      if (undoStackRef.current.length > MAX_HISTORY) undoStackRef.current.shift();
-    }
-    redoStackRef.current = [];
+      if (canCoalesce && last) {
+        last.time = now;
+      } else {
+        undoStackRef.current.push({
+          records: prev,
+          fileName: fileNameRef.current,
+          label,
+          coalesceKey: options.coalesceKey,
+          time: now,
+        });
+        if (undoStackRef.current.length > MAX_HISTORY) undoStackRef.current.shift();
+      }
+      redoStackRef.current = [];
 
-    recordsRef.current = nextRecords;
-    setRecords(nextRecords);
-    if (options.fileName !== undefined) {
-      fileNameRef.current = options.fileName;
-      setFileName(options.fileName);
-    }
-    syncHistoryState();
-  };
+      recordsRef.current = nextRecords;
+      setRecords(nextRecords);
+      if (options.fileName !== undefined) {
+        fileNameRef.current = options.fileName;
+        setFileName(options.fileName);
+      }
+      syncHistoryState();
+    },
+    [syncHistoryState]
+  );
 
   const restoreSnapshot = (entry: HistoryEntry) => {
     recordsRef.current = entry.records;
@@ -227,19 +233,25 @@ export function App() {
     }
   }, []);
 
-  // データ変更時にローカルストレージに自動保存
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
+  // データ変更時にローカルストレージへデバウンス自動保存（タップ時のメインスレッド詰まりを防止）
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<{
+    records: MoneyForwardRecord[];
+    fileName: string | null;
+    selectedPeriod: string;
+  } | null>(null);
 
-    if (records.length > 0) {
-      const result = saveStoredData({
-        records,
-        fileName,
-        selectedPeriod,
-      });
+  const flushPendingSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    pendingSaveRef.current = null;
+
+    if (pending.records.length > 0) {
+      const result = saveStoredData(pending);
       if (!result.ok) {
         setStorageError(result.message);
         showToast('error', result.message);
@@ -250,7 +262,35 @@ export function App() {
       clearStoredData();
       setStorageError(null);
     }
-  }, [records, fileName, selectedPeriod]);
+  }, []);
+
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    pendingSaveRef.current = { records, fileName, selectedPeriod };
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(flushPendingSave, 350);
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [records, fileName, selectedPeriod, flushPendingSave]);
+
+  // タブを閉じる・バックグラウンド移行時に未保存分を即時フラッシュ
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') flushPendingSave();
+    };
+    window.addEventListener('pagehide', flushPendingSave);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushPendingSave);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [flushPendingSave]);
 
   // グローバルショートカット ([ / ] で月移動, ? でヘルプ, Cmd+Z で元に戻す)
   useEffect(() => {
@@ -427,6 +467,10 @@ export function App() {
     return applyFiltersToRecords(periodFilteredRecords, filters);
   }, [periodFilteredRecords, filters]);
 
+  // サマリー・グラフ用の遅延値（ボタン操作のUI応答を最優先にし、重いグラフ再計算を後追いにする）
+  const deferredFilteredRecords = useDeferredValue(fullyFilteredRecords);
+  const deferredPeriodRecords = useDeferredValue(periodFilteredRecords);
+
   // 現在の期間ラベル
   const currentPeriodLabel = useMemo(() => {
     const periodOptions = getAvailablePeriods(records);
@@ -462,23 +506,26 @@ export function App() {
     );
   };
 
-  // 明細の個別更新
-  const handleUpdateRecord = (id: string, updates: Partial<MoneyForwardRecord>) => {
-    const label =
-      'customMemo' in updates
-        ? 'メモの編集'
-        : 'customFlag' in updates
-        ? 'フラグの変更'
-        : 'calculationTarget' in updates
-        ? '計算対象の切り替え'
-        : '明細の編集';
-    commitRecords(
-      (prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
-      label,
-      // メモは1文字ごとに更新されるため、同じ行の連続入力は1つの履歴にまとめる
-      'customMemo' in updates ? { coalesceKey: `memo:${id}` } : {}
-    );
-  };
+  // 明細の個別更新（参照を安定化してカード/行の不要な再レンダリングを防止）
+  const handleUpdateRecord = useCallback(
+    (id: string, updates: Partial<MoneyForwardRecord>) => {
+      const label =
+        'customMemo' in updates
+          ? 'メモの編集'
+          : 'customFlag' in updates
+          ? 'フラグの変更'
+          : 'calculationTarget' in updates
+          ? '計算対象の切り替え'
+          : '明細の編集';
+      commitRecords(
+        (prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+        label,
+        // メモは1文字ごとに更新されるため、同じ行の連続入力は1つの履歴にまとめる
+        'customMemo' in updates ? { coalesceKey: `memo:${id}` } : {}
+      );
+    },
+    [commitRecords]
+  );
 
   // 一括フラグ更新
   const handleBatchUpdateFlag = (selectedIds: string[], newFlag: string) => {
@@ -750,15 +797,15 @@ export function App() {
 
             {/* サマリーカード（現在のフィルタ状態に連動） */}
             <SummaryCards
-              records={fullyFilteredRecords}
+              records={deferredFilteredRecords}
               customFlags={settings.customFlags}
               onMarkAsSettled={handleMarkAsSettled}
             />
 
             {/* カテゴリ & フラグ分析チャート（現在のフィルタ状態に連動 & クリックで絞り込み） */}
             <CategoryChart
-              records={fullyFilteredRecords}
-              allPeriodRecords={periodFilteredRecords}
+              records={deferredFilteredRecords}
+              allPeriodRecords={deferredPeriodRecords}
               filters={filters}
               onFiltersChange={setFilters}
             />

@@ -15,9 +15,273 @@ import {
   PlusCircle,
   SlidersHorizontal,
   X,
+  Ban,
 } from 'lucide-react';
 import { isAnyModalOpen } from '../hooks/useModal';
 import { DEFAULT_FILTERS } from '../utils/filterUtils';
+
+/** 画面幅がモバイル (768px 未満) かどうかを監視（PC/スマホの片側のみマウントしてDOM負荷を半減） */
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  return isMobile;
+};
+
+const triggerHaptic = () => {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(10);
+    }
+  } catch {
+    // 非対応環境は無視
+  }
+};
+
+interface MobileRecordCardProps {
+  record: MoneyForwardRecord;
+  isSelected: boolean;
+  customFlags: string[];
+  onToggleSelect: (id: string) => void;
+  onUpdateRecord: (id: string, updates: Partial<MoneyForwardRecord>) => void;
+}
+
+/**
+ * モバイル用明細カード（React.memo で変更された1枚だけ再描画し、タップ応答を最速化）
+ */
+const MobileRecordCard = React.memo<MobileRecordCardProps>(
+  ({ record, isSelected, customFlags, onToggleSelect, onUpdateRecord }) => {
+    const [popState, setPopState] = useState<{
+      btn: 'settlement' | 'exclude' | 'target';
+      seq: number;
+    } | null>(null);
+
+    const triggerPop = (btn: 'settlement' | 'exclude' | 'target') => {
+      triggerHaptic();
+      setPopState((prev) => ({ btn, seq: (prev?.seq ?? 0) + 1 }));
+    };
+
+    const isExpense = record.amount < 0;
+    const isTransfer = record.transfer;
+    const isSettlement =
+      record.customFlag === '清算対象' || record.customFlag === '精算対象';
+    const isSettled =
+      record.customFlag === '清算済み' || record.customFlag === '精算済み';
+    const isExcludedFlag = record.customFlag === '除外';
+    const isOtherFlag =
+      Boolean(record.customFlag) &&
+      record.customFlag !== '未設定' &&
+      !isSettlement &&
+      !isExcludedFlag;
+
+    const leftBorderClass = !record.calculationTarget
+      ? 'border-l-4 border-l-rose-400'
+      : isSettlement
+      ? 'border-l-4 border-l-indigo-500'
+      : isSettled
+      ? 'border-l-4 border-l-emerald-500'
+      : isExcludedFlag
+      ? 'border-l-4 border-l-slate-500'
+      : 'border-l-4 border-l-transparent';
+
+    return (
+      <div
+        className={`p-3.5 space-y-2.5 transition-colors duration-150 ${leftBorderClass} ${
+          isSelected
+            ? 'bg-indigo-50/50'
+            : isExcludedFlag
+            ? 'bg-slate-50/90'
+            : 'bg-white'
+        } ${!record.calculationTarget ? 'opacity-65 bg-slate-50/70' : ''}`}
+      >
+        {/* 1段目: チェックボックス・日付・金融機関 ／ 金額 */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => onToggleSelect(record.id)}
+              className="p-1 -m-1 text-slate-400 hover:text-slate-700 cursor-pointer shrink-0 touch-manipulation"
+              aria-label="行を選択"
+            >
+              {isSelected ? (
+                <CheckSquare className="w-5 h-5 text-indigo-600" />
+              ) : (
+                <Square className="w-5 h-5" />
+              )}
+            </button>
+            <span className="font-mono text-[11px] text-slate-500 shrink-0">
+              {record.date}
+            </span>
+            {isTransfer && (
+              <span className="text-[10px] px-1.5 py-0.2 bg-slate-200 text-slate-600 rounded shrink-0">
+                振替
+              </span>
+            )}
+            {record.institution && (
+              <span className="text-[11px] text-slate-400 truncate">
+                {record.institution}
+              </span>
+            )}
+          </div>
+          <span
+            className={`font-mono text-sm font-bold whitespace-nowrap shrink-0 transition-colors ${
+              isExcludedFlag
+                ? 'text-slate-400 line-through'
+                : isExpense
+                ? 'text-slate-900'
+                : 'text-emerald-600'
+            }`}
+          >
+            {record.amount > 0
+              ? `+¥${record.amount.toLocaleString()}`
+              : `¥${record.amount.toLocaleString()}`}
+          </span>
+        </div>
+
+        {/* 2段目: 内容 & カテゴリ */}
+        <div className="space-y-1">
+          <p
+            className={`text-sm font-semibold leading-snug break-words transition-colors ${
+              isExcludedFlag ? 'text-slate-400 line-through' : 'text-slate-800'
+            }`}
+          >
+            {record.content}
+          </p>
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-[11px] text-slate-700">
+              {record.majorCategory}
+            </span>
+            {record.mediumCategory && record.mediumCategory !== '未分類' && (
+              <span className="text-[11px] text-slate-400">/ {record.mediumCategory}</span>
+            )}
+          </div>
+        </div>
+
+        {/* 3段目: ワンタップ仕分けボタン（押した感アニメーション付き） */}
+        <div className="flex items-center gap-1.5 pt-0.5">
+          {/* 清算対象 ワンタップトグル */}
+          <button
+            key={popState?.btn === 'settlement' ? `s-${popState.seq}` : 's'}
+            type="button"
+            onClick={() => {
+              triggerPop('settlement');
+              onUpdateRecord(
+                record.id,
+                isSettlement
+                  ? { customFlag: '未設定' }
+                  : { customFlag: '清算対象', calculationTarget: true }
+              );
+            }}
+            aria-pressed={isSettlement}
+            className={`flex-1 py-2 px-2 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
+              popState?.btn === 'settlement' ? 'animate-btn-pop' : ''
+            } ${
+              isSettlement
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm ring-2 ring-indigo-500/30'
+                : 'bg-white text-indigo-700 border-indigo-200 border-b-indigo-300 hover:bg-indigo-50'
+            }`}
+          >
+            {isSettlement && <Check className="w-3.5 h-3.5 shrink-0 animate-icon-pop" />}
+            <span>清算対象</span>
+          </button>
+
+          {/* 除外フラグ ワンタップトグル */}
+          <button
+            key={popState?.btn === 'exclude' ? `e-${popState.seq}` : 'e'}
+            type="button"
+            onClick={() => {
+              triggerPop('exclude');
+              onUpdateRecord(record.id, {
+                customFlag: isExcludedFlag ? '未設定' : '除外',
+              });
+            }}
+            aria-pressed={isExcludedFlag}
+            className={`py-2 px-2.5 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
+              popState?.btn === 'exclude' ? 'animate-btn-pop' : ''
+            } ${
+              isExcludedFlag
+                ? 'bg-slate-700 text-white border-slate-800 shadow-sm ring-2 ring-slate-500/35'
+                : 'bg-white text-slate-600 border-slate-300 border-b-slate-400/80 hover:bg-slate-50'
+            }`}
+          >
+            <Ban
+              className={`w-3.5 h-3.5 shrink-0 ${
+                isExcludedFlag ? 'text-white animate-icon-pop' : 'text-slate-400'
+              }`}
+            />
+            <span>除外</span>
+          </button>
+
+          {/* 計算対象外 ワンタップトグル */}
+          <button
+            key={popState?.btn === 'target' ? `t-${popState.seq}` : 't'}
+            type="button"
+            onClick={() => {
+              triggerPop('target');
+              onUpdateRecord(record.id, { calculationTarget: !record.calculationTarget });
+            }}
+            aria-pressed={!record.calculationTarget}
+            className={`py-2 px-2.5 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
+              popState?.btn === 'target' ? 'animate-btn-pop' : ''
+            } ${
+              !record.calculationTarget
+                ? 'bg-rose-600 text-white border-rose-700 shadow-sm ring-2 ring-rose-500/30'
+                : 'bg-white text-slate-500 border-slate-200 border-b-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            {!record.calculationTarget && <X className="w-3.5 h-3.5 shrink-0 animate-icon-pop" />}
+            <span>対象外</span>
+          </button>
+
+          {/* その他フラグ（清算済み・カスタムフラグ等） */}
+          <select
+            aria-label="その他のフラグを選択"
+            value={record.customFlag || '未設定'}
+            onChange={(e) => onUpdateRecord(record.id, { customFlag: e.target.value })}
+            className={`max-w-[82px] py-2 px-1.5 rounded-lg border text-[11px] font-semibold focus:outline-none transition-colors cursor-pointer touch-manipulation ${
+              isSettled
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
+                : isOtherFlag
+                ? 'bg-amber-50 text-amber-800 border-amber-300 font-bold'
+                : 'bg-slate-50 text-slate-500 border-slate-200'
+            }`}
+          >
+            {customFlags.map((f) => (
+              <option key={f} value={f}>
+                {f === '未設定' ? '他…' : f}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 4段目: メモ / 独自メモ */}
+        <div className="space-y-1">
+          {record.memo && (
+            <p className="text-[11px] text-slate-400 break-words">
+              MFメモ: {record.memo}
+            </p>
+          )}
+          <input
+            type="text"
+            placeholder="独自メモを入力..."
+            value={record.customMemo || ''}
+            onChange={(e) => onUpdateRecord(record.id, { customMemo: e.target.value })}
+            className="w-full text-sm px-2.5 py-1.5 bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg focus:outline-none transition-colors"
+          />
+        </div>
+      </div>
+    );
+  }
+);
 
 interface TransactionTableProps {
   records: MoneyForwardRecord[]; // 期間＋フィルタ適用済みのレコード
@@ -60,8 +324,9 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
 
-  // モバイル用フィルタ折りたたみ開閉
+  // モバイル用フィルタ折りたたみ開閉 & 画面幅判定
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   // 行の参照（スクロール追従用）
   const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
@@ -661,227 +926,52 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
         </div>
       </div>
 
-      {/* モバイル用 カードリスト表示 (md 未満) */}
-      <div className="md:hidden">
-        {/* モバイル用 全選択・件数ミニバー */}
-        {paginatedRecords.length > 0 && (
-          <div className="px-3 py-2 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
-            <button
-              type="button"
-              onClick={handleToggleSelectAll}
-              className="inline-flex items-center gap-1.5 font-medium text-slate-700 cursor-pointer"
-            >
-              {isAllSelected ? (
-                <CheckSquare className="w-4 h-4 text-indigo-600" />
-              ) : (
-                <Square className="w-4 h-4 text-slate-400" />
-              )}
-              <span>{isAllSelected ? 'このページの選択を解除' : 'このページをすべて選択'}</span>
-            </button>
-            <span className="text-[11px] text-slate-500">
-              {sortedRecords.length.toLocaleString()} 件
-            </span>
-          </div>
-        )}
+      {/* モバイル用 カードリスト表示 (md 未満のときのみマウント) */}
+      {isMobile ? (
+        <div>
+          {/* モバイル用 全選択・件数ミニバー */}
+          {paginatedRecords.length > 0 && (
+            <div className="px-3 py-2 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
+              <button
+                type="button"
+                onClick={handleToggleSelectAll}
+                className="inline-flex items-center gap-1.5 font-medium text-slate-700 cursor-pointer touch-manipulation"
+              >
+                {isAllSelected ? (
+                  <CheckSquare className="w-4 h-4 text-indigo-600" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>{isAllSelected ? 'このページの選択を解除' : 'このページをすべて選択'}</span>
+              </button>
+              <span className="text-[11px] text-slate-500">
+                {sortedRecords.length.toLocaleString()} 件
+              </span>
+            </div>
+          )}
 
-        {paginatedRecords.length === 0 ? (
-          <div className="py-12 text-center text-xs text-slate-400">
-            条件に一致する明細がありません
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-200/80">
-            {paginatedRecords.map((record) => {
-              const isSelected = selectedIds.has(record.id);
-              const isExpense = record.amount < 0;
-              const isTransfer = record.transfer;
-              const isSettlement =
-                record.customFlag === '清算対象' || record.customFlag === '精算対象';
-              const isSettled =
-                record.customFlag === '清算済み' || record.customFlag === '精算済み';
-              const isExcludedFlag = record.customFlag === '除外';
-              const isOtherFlag =
-                Boolean(record.customFlag) &&
-                record.customFlag !== '未設定' &&
-                !isSettlement &&
-                !isExcludedFlag;
-
-              const leftBorderClass = !record.calculationTarget
-                ? 'border-l-4 border-l-rose-300'
-                : isSettlement
-                ? 'border-l-4 border-l-indigo-500'
-                : isSettled
-                ? 'border-l-4 border-l-emerald-500'
-                : isExcludedFlag
-                ? 'border-l-4 border-l-slate-400'
-                : 'border-l-4 border-l-transparent';
-
-              return (
-                <div
+          {paginatedRecords.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-400">
+              条件に一致する明細がありません
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-200/80">
+              {paginatedRecords.map((record) => (
+                <MobileRecordCard
                   key={record.id}
-                  className={`p-3.5 space-y-2.5 transition-colors ${leftBorderClass} ${
-                    isSelected ? 'bg-indigo-50/50' : 'bg-white'
-                  } ${!record.calculationTarget ? 'opacity-65 bg-slate-50/70' : ''}`}
-                >
-                  {/* 1段目: チェックボックス・日付・金融機関 ／ 金額 */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleSelectRow(record.id)}
-                        className="p-1 -m-1 text-slate-400 hover:text-slate-700 cursor-pointer shrink-0"
-                        aria-label="行を選択"
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="w-5 h-5 text-indigo-600" />
-                        ) : (
-                          <Square className="w-5 h-5" />
-                        )}
-                      </button>
-                      <span className="font-mono text-[11px] text-slate-500 shrink-0">
-                        {record.date}
-                      </span>
-                      {isTransfer && (
-                        <span className="text-[10px] px-1.5 py-0.2 bg-slate-200 text-slate-600 rounded shrink-0">
-                          振替
-                        </span>
-                      )}
-                      {record.institution && (
-                        <span className="text-[11px] text-slate-400 truncate">
-                          {record.institution}
-                        </span>
-                      )}
-                    </div>
-                    <span
-                      className={`font-mono text-sm font-bold whitespace-nowrap shrink-0 ${
-                        isExpense ? 'text-slate-900' : 'text-emerald-600'
-                      }`}
-                    >
-                      {record.amount > 0
-                        ? `+¥${record.amount.toLocaleString()}`
-                        : `¥${record.amount.toLocaleString()}`}
-                    </span>
-                  </div>
-
-                  {/* 2段目: 内容 & カテゴリ */}
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-800 leading-snug break-words">
-                      {record.content}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-[11px] text-slate-700">
-                        {record.majorCategory}
-                      </span>
-                      {record.mediumCategory && record.mediumCategory !== '未分類' && (
-                        <span className="text-[11px] text-slate-400">/ {record.mediumCategory}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 3段目: ワンタップ仕分けボタン（清算対象・除外・対象外）＋ その他フラグ */}
-                  <div className="flex items-center gap-1.5 pt-0.5">
-                    {/* 清算対象 ワンタップトグル */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateRecord(
-                          record.id,
-                          isSettlement
-                            ? { customFlag: '未設定' }
-                            : { customFlag: '清算対象', calculationTarget: true }
-                        )
-                      }
-                      aria-pressed={isSettlement}
-                      className={`flex-1 py-2 px-2 rounded-lg border text-xs font-bold inline-flex items-center justify-center gap-1 transition-all active:scale-[0.98] cursor-pointer whitespace-nowrap ${
-                        isSettlement
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                          : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
-                      }`}
-                    >
-                      {isSettlement && <Check className="w-3.5 h-3.5 shrink-0" />}
-                      <span>清算対象</span>
-                    </button>
-
-                    {/* 除外フラグ ワンタップトグル */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateRecord(record.id, {
-                          customFlag: isExcludedFlag ? '未設定' : '除外',
-                        })
-                      }
-                      aria-pressed={isExcludedFlag}
-                      className={`py-2 px-2.5 rounded-lg border text-xs font-bold inline-flex items-center justify-center gap-1 transition-all active:scale-[0.98] cursor-pointer whitespace-nowrap ${
-                        isExcludedFlag
-                          ? 'bg-slate-600 text-white border-slate-600 shadow-xs'
-                          : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      {isExcludedFlag && <Check className="w-3.5 h-3.5 shrink-0" />}
-                      <span>除外</span>
-                    </button>
-
-                    {/* 計算対象外 ワンタップトグル */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateRecord(record.id, { calculationTarget: !record.calculationTarget })
-                      }
-                      aria-pressed={!record.calculationTarget}
-                      className={`py-2 px-2.5 rounded-lg border text-xs font-bold inline-flex items-center justify-center gap-1 transition-all active:scale-[0.98] cursor-pointer whitespace-nowrap ${
-                        !record.calculationTarget
-                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
-                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      {!record.calculationTarget && <X className="w-3.5 h-3.5 shrink-0" />}
-                      <span>対象外</span>
-                    </button>
-
-                    {/* その他フラグ（清算済み・カスタムフラグ等） */}
-                    <select
-                      aria-label="その他のフラグを選択"
-                      value={record.customFlag || '未設定'}
-                      onChange={(e) => onUpdateRecord(record.id, { customFlag: e.target.value })}
-                      className={`max-w-[88px] py-2 px-1.5 rounded-lg border text-[11px] font-semibold focus:outline-none transition-colors cursor-pointer ${
-                        isSettled
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
-                          : isOtherFlag
-                          ? 'bg-amber-50 text-amber-800 border-amber-300 font-bold'
-                          : 'bg-slate-50 text-slate-500 border-slate-200'
-                      }`}
-                    >
-                      {customFlags.map((f) => (
-                        <option key={f} value={f}>
-                          {f === '未設定' ? '他…' : f}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* 4段目: メモ / 独自メモ */}
-                  <div className="space-y-1">
-                    {record.memo && (
-                      <p className="text-[11px] text-slate-400 break-words">
-                        MFメモ: {record.memo}
-                      </p>
-                    )}
-                    <input
-                      type="text"
-                      placeholder="独自メモを入力..."
-                      value={record.customMemo || ''}
-                      onChange={(e) => onUpdateRecord(record.id, { customMemo: e.target.value })}
-                      className="w-full text-sm px-2.5 py-1.5 bg-slate-50 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg focus:outline-none transition-colors"
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* PC用 テーブル本体 (md 以上) */}
-      <div className="hidden md:block overflow-x-auto">
+                  record={record}
+                  isSelected={selectedIds.has(record.id)}
+                  customFlags={customFlags}
+                  onToggleSelect={handleToggleSelectRow}
+                  onUpdateRecord={onUpdateRecord}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* PC用 テーブル本体 (md 以上のときのみマウント) */
+        <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="bg-slate-100/75 border-b border-slate-200 text-slate-600 font-semibold select-none">
@@ -1090,7 +1180,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
             )}
           </tbody>
         </table>
-      </div>
+        </div>
+      )}
 
       {/* ページネーションフッター */}
       <div
