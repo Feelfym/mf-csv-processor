@@ -41,7 +41,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
   const [institution, setInstitution] = useState('現金');
   const [customFlag, setCustomFlag] = useState(customFlags.includes('清算対象') ? '清算対象' : '未設定');
   const [customMemo, setCustomMemo] = useState('');
-  const [calculationTarget, setCalculationTarget] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // モーダルが開くたびに初期化
@@ -56,7 +55,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
       setInstitution('現金');
       setCustomFlag(customFlags.includes('清算対象') ? '清算対象' : '未設定');
       setCustomMemo('');
-      setCalculationTarget(true);
       setError(null);
     }
   }, [isOpen, currentPeriod, customFlags]);
@@ -135,7 +133,7 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
       majorCategory: majorCategory.trim() || '未分類',
       mediumCategory: mediumCategory.trim() || '未分類',
       institution: institution.trim() || '現金',
-      calculationTarget,
+      calculationTarget: true,
       memo: '',
       transfer: false,
       mfId: '',
@@ -344,19 +342,6 @@ export const AddRecordModal: React.FC<AddRecordModalProps> = ({
               onChange={(e) => setCustomMemo(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-slate-800"
             />
-          </div>
-
-          {/* 計算対象チェックボックス */}
-          <div className="pt-1">
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={calculationTarget}
-                onChange={(e) => setCalculationTarget(e.target.checked)}
-                className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
-              />
-              <span className="font-medium text-slate-700">計算対象に含める</span>
-            </label>
           </div>
 
           {/* フッターボタン */}

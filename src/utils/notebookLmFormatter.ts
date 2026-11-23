@@ -15,23 +15,20 @@ export const generateNotebookLmMarkdown = (
 ): string => {
   const { periodLabel, customFlags, includeDetailTable = true } = options;
 
-  // 1. 基本集計
-  const validExpenses = records.filter(
-    (r) => r.calculationTarget && !r.transfer && r.amount < 0
-  );
+  // 1. 基本集計（MFの計算対象カラムに関わらず全レコード対象）
+  const validExpenses = records.filter((r) => !r.transfer && r.amount < 0);
   const totalExpense = validExpenses.reduce((sum, r) => sum + Math.abs(r.amount), 0);
 
-  const totalIncome = records
-    .filter((r) => r.calculationTarget && !r.transfer && r.amount > 0)
-    .reduce((sum, r) => sum + r.amount, 0);
+  const validIncomes = records.filter((r) => !r.transfer && r.amount > 0);
+  const totalIncome = validIncomes.reduce((sum, r) => sum + r.amount, 0);
 
   const netBalance = totalIncome - totalExpense;
 
-  // 2. フラグ別集計（純額計算・計算対象のみ）
+  // 2. フラグ別集計（純額計算）
   const flagSummaries = customFlags
     .filter((f) => f !== '未設定')
     .map((flag) => {
-      const matching = records.filter((r) => r.calculationTarget && r.customFlag === flag);
+      const matching = records.filter((r) => r.customFlag === flag);
       const expenseSum = matching
         .filter((r) => r.amount < 0)
         .reduce((acc, r) => acc + Math.abs(r.amount), 0);
@@ -61,9 +58,9 @@ export const generateNotebookLmMarkdown = (
     }))
     .sort((a, b) => b.sum - a.sum);
 
-  // 4. 清算対象明細（計算対象のみ）
+  // 4. 清算対象明細
   const settlementRecords = records.filter(
-    (r) => r.calculationTarget && (r.customFlag === '清算対象' || r.customFlag === '精算対象')
+    (r) => r.customFlag === '清算対象' || r.customFlag === '精算対象'
   );
 
   // Markdown組み立て
@@ -76,7 +73,7 @@ export const generateNotebookLmMarkdown = (
 
   lines.push('## 1. 収支サマリー');
   lines.push(`- **総支出（振替除く）**: ¥${totalExpense.toLocaleString()} (${validExpenses.length} 件)`);
-  lines.push(`- **総収入（振替除く）**: ¥${totalIncome.toLocaleString()} (${records.filter((r) => r.calculationTarget && !r.transfer && r.amount > 0).length} 件)`);
+  lines.push(`- **総収入（振替除く）**: ¥${totalIncome.toLocaleString()} (${validIncomes.length} 件)`);
   lines.push(`- **収支差額**: ${netBalance >= 0 ? `+¥${netBalance.toLocaleString()}` : `-¥${Math.abs(netBalance).toLocaleString()}`}`);
   lines.push('');
 
@@ -114,14 +111,13 @@ export const generateNotebookLmMarkdown = (
 
   if (includeDetailTable && records.length > 0) {
     lines.push(`## 5. 全明細データ一覧 (${records.length} 件)`);
-    lines.push('| 日付 | 内容 | 金額 (円) | 大項目 | 中項目 | 金融機関 | フラグ | メモ | 対象 |');
-    lines.push('| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |');
+    lines.push('| 日付 | 内容 | 金額 (円) | 大項目 | 中項目 | 金融機関 | フラグ | メモ |');
+    lines.push('| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |');
     records.forEach((r) => {
       const memoText = [r.memo, r.customMemo].filter(Boolean).join(' / ');
       const amountStr = r.amount > 0 ? `+¥${r.amount.toLocaleString()}` : `¥${r.amount.toLocaleString()}`;
-      const targetStr = r.calculationTarget ? '○' : '×';
       lines.push(
-        `| ${r.date} | ${r.content} | ${amountStr} | ${r.majorCategory} | ${r.mediumCategory} | ${r.institution} | ${r.customFlag || '未設定'} | ${memoText || '-'} | ${targetStr} |`
+        `| ${r.date} | ${r.content} | ${amountStr} | ${r.majorCategory} | ${r.mediumCategory} | ${r.institution} | ${r.customFlag || '未設定'} | ${memoText || '-'} |`
       );
     });
     lines.push('');

@@ -13,23 +13,20 @@ export const SummaryCards: React.FC<SummaryCardsProps> = React.memo(({
   customFlags,
   onMarkAsSettled,
 }) => {
-  // 計算対象かつ振替ではない支出
-  const validExpenses = records.filter(
-    (r) => r.calculationTarget && !r.transfer && r.amount < 0
-  );
+  // 振替ではない支出（MFの計算対象カラムに関わらず全レコード対象）
+  const validExpenses = records.filter((r) => !r.transfer && r.amount < 0);
   const totalExpense = validExpenses.reduce((sum, r) => sum + Math.abs(r.amount), 0);
 
   // 収入
-  const totalIncome = records
-    .filter((r) => r.calculationTarget && !r.transfer && r.amount > 0)
-    .reduce((sum, r) => sum + r.amount, 0);
+  const validIncomes = records.filter((r) => !r.transfer && r.amount > 0);
+  const totalIncome = validIncomes.reduce((sum, r) => sum + r.amount, 0);
 
-  // フラグ別集計（未設定以外・計算対象のみ）
+  // フラグ別集計（未設定以外）
   // 支出（マイナス）と割引・返金（プラス）を相殺した「実質金額（純額）」を算出
   const flagSummaries = customFlags
     .filter((f) => f !== '未設定')
     .map((flag) => {
-      const matching = records.filter((r) => r.calculationTarget && r.customFlag === flag);
+      const matching = records.filter((r) => r.customFlag === flag);
       // 支出合計（絶対値）
       const expenseSum = matching
         .filter((r) => r.amount < 0)
@@ -78,7 +75,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = React.memo(({
               ¥{totalIncome.toLocaleString()}
             </p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {records.filter((r) => r.calculationTarget && !r.transfer && r.amount > 0).length} 件の収入
+              {validIncomes.length} 件の収入
             </p>
           </div>
           <div className="hidden sm:flex w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 items-center justify-center font-bold shrink-0">

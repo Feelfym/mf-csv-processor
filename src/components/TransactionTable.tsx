@@ -72,13 +72,11 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
 
     const isExpense = record.amount < 0;
     const isTransfer = record.transfer;
-    const isExcluded = !record.calculationTarget || record.customFlag === '除外';
+    const isExcluded = record.customFlag === '除外';
     const isSettlement =
-      !isExcluded &&
-      (record.customFlag === '清算対象' || record.customFlag === '精算対象');
+      record.customFlag === '清算対象' || record.customFlag === '精算対象';
     const isSettled =
-      !isExcluded &&
-      (record.customFlag === '清算済み' || record.customFlag === '精算済み');
+      record.customFlag === '清算済み' || record.customFlag === '精算済み';
     const isOtherFlag =
       !isExcluded &&
       Boolean(record.customFlag) &&
@@ -175,12 +173,9 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
             type="button"
             onClick={() => {
               triggerPop('settlement');
-              onUpdateRecord(
-                record.id,
-                isSettlement
-                  ? { customFlag: '未設定' }
-                  : { customFlag: '清算対象', calculationTarget: true }
-              );
+              onUpdateRecord(record.id, {
+                customFlag: isSettlement ? '未設定' : '清算対象',
+              });
             }}
             aria-pressed={isSettlement}
             className={`flex-1 py-2 px-3 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
@@ -195,18 +190,15 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
             <span>清算対象</span>
           </button>
 
-          {/* 対象外（除外＋計算対象外を1ボタンに統合） */}
+          {/* 対象外（除外フラグ）ワンタップトグル */}
           <button
             key={popState?.btn === 'exclude' ? `e-${popState.seq}` : 'e'}
             type="button"
             onClick={() => {
               triggerPop('exclude');
-              onUpdateRecord(
-                record.id,
-                isExcluded
-                  ? { customFlag: '未設定', calculationTarget: true }
-                  : { customFlag: '除外', calculationTarget: false }
-              );
+              onUpdateRecord(record.id, {
+                customFlag: isExcluded ? '未設定' : '除外',
+              });
             }}
             aria-pressed={isExcluded}
             className={`flex-1 py-2 px-3 rounded-lg border border-b-2 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all duration-75 active:scale-[0.92] active:translate-y-[1px] active:border-b cursor-pointer whitespace-nowrap touch-manipulation select-none ${
@@ -229,13 +221,7 @@ const MobileRecordCard = React.memo<MobileRecordCardProps>(
           <select
             aria-label="その他のフラグを選択"
             value={record.customFlag || '未設定'}
-            onChange={(e) => {
-              const nextFlag = e.target.value;
-              onUpdateRecord(record.id, {
-                customFlag: nextFlag,
-                calculationTarget: nextFlag !== '除外',
-              });
-            }}
+            onChange={(e) => onUpdateRecord(record.id, { customFlag: e.target.value })}
             className={`max-w-[84px] py-2 px-1.5 rounded-lg border text-[11px] font-semibold focus:outline-none transition-colors cursor-pointer touch-manipulation ${
               isSettled
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold'
@@ -280,7 +266,6 @@ interface TransactionTableProps {
   customFlags: string[];
   onUpdateRecord: (id: string, updates: Partial<MoneyForwardRecord>) => void;
   onBatchUpdateFlag: (selectedIds: string[], newFlag: string) => void;
-  onBatchToggleCalcTarget: (selectedIds: string[], target: boolean) => void;
   onOpenShortcutHelp: () => void;
   onOpenAddRecord?: () => void;
   searchRef?: React.RefObject<HTMLInputElement | null>;
@@ -294,7 +279,6 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   customFlags,
   onUpdateRecord,
   onBatchUpdateFlag,
-  onBatchToggleCalcTarget,
   onOpenShortcutHelp,
   onOpenAddRecord,
   searchRef,
@@ -513,19 +497,19 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           onBatchUpdateFlag(Array.from(selectedIds), '清算対象');
           setSelectedIds(new Set());
         } else if (currentRecord) {
-          onUpdateRecord(currentRecord.id, { customFlag: '清算対象', calculationTarget: true });
+          onUpdateRecord(currentRecord.id, { customFlag: '清算対象' });
         }
         return;
       }
 
-      // '2' または 'x' で「対象外（除外）」に設定（計算対象も外す）
+      // '2' または 'x' で「対象外（除外）」に設定
       if (e.key === '2' || e.key.toLowerCase() === 'x') {
         e.preventDefault();
         if (selectedIds.size > 0) {
           onBatchUpdateFlag(Array.from(selectedIds), '除外');
           setSelectedIds(new Set());
         } else if (currentRecord) {
-          onUpdateRecord(currentRecord.id, { customFlag: '除外', calculationTarget: false });
+          onUpdateRecord(currentRecord.id, { customFlag: '除外' });
         }
         return;
       }
@@ -537,7 +521,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           onBatchUpdateFlag(Array.from(selectedIds), '清算済み');
           setSelectedIds(new Set());
         } else if (currentRecord) {
-          onUpdateRecord(currentRecord.id, { customFlag: '清算済み', calculationTarget: true });
+          onUpdateRecord(currentRecord.id, { customFlag: '清算済み' });
         }
         return;
       }
@@ -549,27 +533,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           onBatchUpdateFlag(Array.from(selectedIds), '未設定');
           setSelectedIds(new Set());
         } else if (currentRecord) {
-          onUpdateRecord(
-            currentRecord.id,
-            currentRecord.customFlag === '除外'
-              ? { customFlag: '未設定', calculationTarget: true }
-              : { customFlag: '未設定' }
-          );
-        }
-        return;
-      }
-
-      // 'c' で計算対象を切り替え
-      if (e.key.toLowerCase() === 'c') {
-        e.preventDefault();
-        if (selectedIds.size > 0) {
-          const targetState = currentRecord ? !currentRecord.calculationTarget : true;
-          onBatchToggleCalcTarget(Array.from(selectedIds), targetState);
-          setSelectedIds(new Set());
-        } else if (currentRecord) {
-          onUpdateRecord(currentRecord.id, {
-            calculationTarget: !currentRecord.calculationTarget,
-          });
+          onUpdateRecord(currentRecord.id, { customFlag: '未設定' });
         }
         return;
       }
@@ -595,7 +559,6 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
     handleToggleSelectAll,
     handleToggleSelectRow,
     onBatchUpdateFlag,
-    onBatchToggleCalcTarget,
     onUpdateRecord,
     onOpenShortcutHelp,
     onOpenAddRecord,
@@ -886,29 +849,6 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                 >
                   未設定
                 </button>
-
-                <div className="h-4 w-px bg-indigo-300 mx-1" />
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onBatchToggleCalcTarget(Array.from(selectedIds), true);
-                    setSelectedIds(new Set());
-                  }}
-                  className="px-2 py-1 text-xs bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 rounded-md transition-colors cursor-pointer"
-                >
-                  計算対象にする (c)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onBatchToggleCalcTarget(Array.from(selectedIds), false);
-                    setSelectedIds(new Set());
-                  }}
-                  className="px-2 py-1 text-xs bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 rounded-md transition-colors cursor-pointer"
-                >
-                  計算対象外にする
-                </button>
               </div>
             </>
           ) : (
@@ -1018,13 +958,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                 </div>
               </th>
               <th className="px-3 py-2.5">メモ / 独自メモ</th>
-              <th className="px-3 py-2.5 text-center whitespace-nowrap">対象</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200/70">
             {paginatedRecords.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-slate-400">
+                <td colSpan={8} className="py-12 text-center text-slate-400">
                   条件に一致する明細がありません
                 </td>
               </tr>
@@ -1034,6 +973,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                 const isFocused = index === focusedIndex;
                 const isExpense = record.amount < 0;
                 const isTransfer = record.transfer;
+                const isExcluded = record.customFlag === '除外';
 
                 return (
                   <tr
@@ -1048,7 +988,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                         : isSelected
                         ? 'bg-indigo-50/30'
                         : 'hover:bg-slate-50/80'
-                    } ${!record.calculationTarget ? 'opacity-45 bg-slate-50/30' : ''}`}
+                    } ${isExcluded ? 'opacity-60 bg-slate-50/50' : ''}`}
                   >
                     {/* チェックボックス */}
                     <td className="px-3 py-2.5 text-center">
@@ -1114,20 +1054,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                     <td className="px-3 py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <select
                         value={record.customFlag || '未設定'}
-                        onChange={(e) => {
-                          const nextFlag = e.target.value;
-                          if (nextFlag === '除外') {
-                            onUpdateRecord(record.id, { customFlag: '除外', calculationTarget: false });
-                          } else if (
-                            nextFlag === '清算対象' ||
-                            nextFlag === '清算済み' ||
-                            record.customFlag === '除外'
-                          ) {
-                            onUpdateRecord(record.id, { customFlag: nextFlag, calculationTarget: true });
-                          } else {
-                            onUpdateRecord(record.id, { customFlag: nextFlag });
-                          }
-                        }}
+                        onChange={(e) => onUpdateRecord(record.id, { customFlag: e.target.value })}
                         className={`text-xs font-semibold px-2.5 py-1 rounded-lg border focus:outline-none transition-colors cursor-pointer ${
                           record.customFlag === '清算対象' || record.customFlag === '精算対象'
                             ? 'bg-indigo-50 text-indigo-800 border-indigo-300 shadow-2xs font-bold'
@@ -1162,24 +1089,6 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                           className="w-full text-xs px-2 py-0.5 bg-slate-50 hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-indigo-500 rounded focus:outline-none transition-colors"
                         />
                       </div>
-                    </td>
-
-                    {/* 計算対象トグル */}
-                    <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onUpdateRecord(record.id, { calculationTarget: !record.calculationTarget })
-                        }
-                        title={record.calculationTarget ? '計算対象 (cキーで切替)' : '計算対象外 (cキーで切替)'}
-                        className={`w-6 h-6 rounded-md inline-flex items-center justify-center text-xs font-bold transition-colors cursor-pointer ${
-                          record.calculationTarget
-                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                            : 'bg-slate-200 text-slate-400 hover:bg-slate-300'
-                        }`}
-                      >
-                        {record.calculationTarget ? '○' : '×'}
-                      </button>
                     </td>
                   </tr>
                 );

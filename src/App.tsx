@@ -514,8 +514,6 @@ export function App() {
           ? 'メモの編集'
           : 'customFlag' in updates
           ? 'フラグの変更'
-          : 'calculationTarget' in updates
-          ? '計算対象の切り替え'
           : '明細の編集';
       commitRecords(
         (prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
@@ -527,48 +525,21 @@ export function App() {
     [commitRecords]
   );
 
-  // 一括フラグ更新（「除外」は計算対象外、「清算対象/清算済み」は計算対象に連動）
+  // 一括フラグ更新
   const handleBatchUpdateFlag = (selectedIds: string[], newFlag: string) => {
     const idSet = new Set(selectedIds);
     commitRecords(
-      (prev) =>
-        prev.map((r) => {
-          if (!idSet.has(r.id)) return r;
-          if (newFlag === '除外') {
-            return { ...r, customFlag: '除外', calculationTarget: false };
-          }
-          if (newFlag === '清算対象' || newFlag === '清算済み') {
-            return { ...r, customFlag: newFlag, calculationTarget: true };
-          }
-          if (newFlag === '未設定' && r.customFlag === '除外') {
-            return { ...r, customFlag: '未設定', calculationTarget: true };
-          }
-          return { ...r, customFlag: newFlag };
-        }),
+      (prev) => prev.map((r) => (idSet.has(r.id) ? { ...r, customFlag: newFlag } : r)),
       `${selectedIds.length} 件のフラグ変更`
     );
     const label = newFlag === '除外' ? '対象外（除外）' : newFlag;
     showToast('success', `${selectedIds.length} 件を「${label}」に変更しました`, undoAction);
   };
 
-  // 一括計算対象切り替え
-  const handleBatchToggleCalcTarget = (selectedIds: string[], target: boolean) => {
-    const idSet = new Set(selectedIds);
-    commitRecords(
-      (prev) => prev.map((r) => (idSet.has(r.id) ? { ...r, calculationTarget: target } : r)),
-      `${selectedIds.length} 件の計算対象切り替え`
-    );
-    showToast(
-      'success',
-      `${selectedIds.length} 件を${target ? '計算対象' : '計算対象外'}に設定しました`,
-      undoAction
-    );
-  };
-
   // 選択中/表示中の「清算対象」を一括で「清算済み」に変更
   const handleMarkAsSettled = (_count?: number, sum?: number) => {
     const targetRecords = fullyFilteredRecords.filter(
-      (r) => r.calculationTarget && (r.customFlag === '清算対象' || r.customFlag === '精算対象')
+      (r) => r.customFlag === '清算対象' || r.customFlag === '精算対象'
     );
 
     if (targetRecords.length === 0) {
@@ -833,7 +804,6 @@ export function App() {
               customFlags={settings.customFlags}
               onUpdateRecord={handleUpdateRecord}
               onBatchUpdateFlag={handleBatchUpdateFlag}
-              onBatchToggleCalcTarget={handleBatchToggleCalcTarget}
               onOpenShortcutHelp={() => setIsShortcutHelpOpen(true)}
               onOpenAddRecord={() => setIsAddRecordOpen(true)}
               searchRef={searchInputRef}

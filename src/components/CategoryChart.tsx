@@ -68,7 +68,7 @@ export const CategoryChart: React.FC<CategoryChartProps> = React.memo(({
   // - 大項目が未選択（ALL）の場合: 大項目以外のフィルター適用済みレコードを使い、「大項目別」の内訳を表示
   const categoryExpenses = useMemo(() => {
     const target = isFilteringCategory ? records : recordsFilteredExceptCategory;
-    return target.filter((r) => r.calculationTarget && !r.transfer && r.amount < 0);
+    return target.filter((r) => !r.transfer && r.amount < 0);
   }, [isFilteringCategory, records, recordsFilteredExceptCategory]);
 
   const categoryData = useMemo(() => {
@@ -89,17 +89,15 @@ export const CategoryChart: React.FC<CategoryChartProps> = React.memo(({
       .sort((a, b) => b.value - a.value);
   }, [categoryExpenses, isFilteringCategory]);
 
-  // フラグ別ビューの集計（大項目フィルター等を反映した計算対象レコードからフラグ別の純額を算出）
+  // フラグ別ビューの集計（大項目フィルター等を反映した全レコードからフラグ別の純額を算出）
   const flagData = useMemo(() => {
     const flagMap: { [key: string]: number } = {};
-    recordsFilteredExceptFlag
-      .filter((r) => r.calculationTarget)
-      .forEach((r) => {
-        const flag = r.customFlag || '未設定';
-        if (!flagMap[flag]) flagMap[flag] = 0;
-        // 支出（amount < 0）はプラス加算、割引・返金（amount > 0）はマイナス減算
-        flagMap[flag] += -r.amount;
-      });
+    recordsFilteredExceptFlag.forEach((r) => {
+      const flag = r.customFlag || '未設定';
+      if (!flagMap[flag]) flagMap[flag] = 0;
+      // 支出（amount < 0）はプラス加算、割引・返金（amount > 0）はマイナス減算
+      flagMap[flag] += -r.amount;
+    });
 
     return Object.entries(flagMap)
       .filter(([_, value]) => value > 0)

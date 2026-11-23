@@ -28,7 +28,6 @@ export const ShortcutHelpModal: React.FC<ShortcutHelpModalProps> = ({ isOpen, on
         { key: '3', desc: 'フォーカス行（または選択行）を「清算済み」にする' },
         { key: '2  または  x', desc: 'フォーカス行（または選択行）を「対象外（除外）」にする' },
         { key: '0  または  u', desc: 'フォーカス行（または選択行）を「未設定」に戻す' },
-        { key: 'c', desc: '計算対象（○ / ×）を切り替え' },
         { key: 'Enter', desc: 'フォーカス行の独自メモ編集を開始' },
       ],
     },
