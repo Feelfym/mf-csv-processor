@@ -11,6 +11,9 @@ import {
   ToggleRight,
   Download,
   Upload,
+  Pencil,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 
 interface RuleModalProps {
@@ -42,6 +45,8 @@ export const RuleModal: React.FC<RuleModalProps> = ({
   const [overwrite, setOverwrite] = useState(false);
   const [showAppliedToast, setShowAppliedToast] = useState(false);
   const [messageToast, setMessageToast] = useState<string | null>(null);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState<Omit<AutoRule, 'id'> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,6 +54,8 @@ export const RuleModal: React.FC<RuleModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setLocalRules(rules);
+      setEditingRuleId(null);
+      setEditingDraft(null);
       setNewRule((prev) => ({
         ...prev,
         applyFlag: customFlags.includes(prev.applyFlag)
@@ -58,7 +65,16 @@ export const RuleModal: React.FC<RuleModalProps> = ({
     }
   }, [isOpen, rules, customFlags]);
 
-  const { overlayProps, dialogProps } = useModal(isOpen, onClose, { closeOnBackdrop: false });
+  const handleModalClose = () => {
+    if (editingRuleId) {
+      setEditingRuleId(null);
+      setEditingDraft(null);
+      return;
+    }
+    onClose();
+  };
+
+  const { overlayProps, dialogProps } = useModal(isOpen, handleModalClose, { closeOnBackdrop: false });
   if (!isOpen) return null;
 
   const showMsg = (msg: string) => {
@@ -96,6 +112,56 @@ export const RuleModal: React.FC<RuleModalProps> = ({
 
   const handleDeleteRule = (id: string) => {
     const updated = localRules.filter((r) => r.id !== id);
+    if (editingRuleId === id) {
+      setEditingRuleId(null);
+      setEditingDraft(null);
+    }
+    setLocalRules(updated);
+    onSaveRules(updated);
+  };
+
+  const handleStartEdit = (rule: AutoRule) => {
+    setEditingRuleId(rule.id);
+    setEditingDraft({
+      name: rule.name,
+      targetField: rule.targetField,
+      matchType: rule.matchType,
+      keyword: rule.keyword,
+      applyFlag: rule.applyFlag,
+      enabled: rule.enabled,
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingRuleId(null);
+    setEditingDraft(null);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingRuleId || !editingDraft || !editingDraft.keyword.trim()) return;
+    const trimmedKeyword = editingDraft.keyword.trim();
+    const updated = localRules.map((r) =>
+      r.id === editingRuleId
+        ? {
+            ...r,
+            ...editingDraft,
+            keyword: trimmedKeyword,
+            name: `「${trimmedKeyword}」→ ${editingDraft.applyFlag}`,
+          }
+        : r
+    );
+    setLocalRules(updated);
+    onSaveRules(updated);
+    setEditingRuleId(null);
+    setEditingDraft(null);
+    showMsg('ルールを更新しました');
+  };
+
+  const handleMoveRule = (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= localRules.length) return;
+    const updated = [...localRules];
+    [updated[index], updated[targetIndex]] = [updated[targetIndex], updated[index]];
     setLocalRules(updated);
     onSaveRules(updated);
   };
@@ -258,6 +324,12 @@ export const RuleModal: React.FC<RuleModalProps> = ({
                   placeholder="例: JR, タクシー"
                   value={newRule.keyword}
                   onChange={(e) => setNewRule({ ...newRule, keyword: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      handleAddRule();
+                    }
+                  }}
                   className="w-full py-1.5 px-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
               </div>
@@ -334,71 +406,210 @@ export const RuleModal: React.FC<RuleModalProps> = ({
                 登録されているルールはありません。上から追加するか、インポートしてください。
               </p>
             ) : (
-              <div className="space-y-1.5 max-h-60 overflow-y-auto">
-                {localRules.map((rule) => (
-                  <div
-                    key={rule.id}
-                    className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-colors ${
-                      rule.enabled
-                        ? 'bg-white border-slate-200'
-                        : 'bg-slate-50 border-slate-200 opacity-60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEnable(rule.id)}
-                        className="text-slate-400 hover:text-slate-600 cursor-pointer"
-                        title={rule.enabled ? '無効にする' : '有効にする'}
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {localRules.map((rule, index) => {
+                  const isEditing = editingRuleId === rule.id && editingDraft !== null;
+
+                  if (isEditing && editingDraft) {
+                    return (
+                      <div
+                        key={rule.id}
+                        className="p-3 rounded-xl border border-indigo-300 bg-indigo-50/50 space-y-2.5 text-xs animate-fadeIn"
                       >
-                        {rule.enabled ? (
-                          <ToggleRight className="w-5 h-5 text-emerald-600" />
-                        ) : (
-                          <ToggleLeft className="w-5 h-5 text-slate-300" />
-                        )}
-                      </button>
-                      <div>
-                        <span className="font-semibold text-slate-800">
-                          {rule.targetField === 'content'
-                            ? '内容'
-                            : rule.targetField === 'majorCategory'
-                            ? '大項目'
-                            : rule.targetField === 'mediumCategory'
-                            ? '中項目'
-                            : rule.targetField === 'institution'
-                            ? '金融機関'
-                            : 'メモ'}
-                        </span>
-                        <span className="text-slate-400 mx-1">が</span>
-                        <span className="font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
-                          "{rule.keyword}"
-                        </span>
-                        <span className="text-slate-400 mx-1">
-                          {rule.matchType === 'contains'
-                            ? 'を含む'
-                            : rule.matchType === 'equals'
-                            ? 'と一致'
-                            : rule.matchType === 'startsWith'
-                            ? 'で始まる'
-                            : 'で終わる'}
-                          とき
-                        </span>
-                        <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                          → {rule.applyFlag}
-                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                          <div className="sm:col-span-3">
+                            <label className="block text-[11px] text-slate-500 mb-0.5">対象の項目</label>
+                            <select
+                              value={editingDraft.targetField}
+                              onChange={(e) =>
+                                setEditingDraft({
+                                  ...editingDraft,
+                                  targetField: e.target.value as AutoRule['targetField'],
+                                })
+                              }
+                              className="w-full py-1.5 px-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            >
+                              <option value="content">内容・店舗名</option>
+                              <option value="majorCategory">大項目</option>
+                              <option value="mediumCategory">中項目</option>
+                              <option value="institution">金融機関</option>
+                              <option value="memo">メモ</option>
+                            </select>
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <label className="block text-[11px] text-slate-500 mb-0.5">条件</label>
+                            <select
+                              value={editingDraft.matchType}
+                              onChange={(e) =>
+                                setEditingDraft({
+                                  ...editingDraft,
+                                  matchType: e.target.value as AutoRule['matchType'],
+                                })
+                              }
+                              className="w-full py-1.5 px-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            >
+                              <option value="contains">を含む</option>
+                              <option value="equals">と完全に一致</option>
+                              <option value="startsWith">から始まる</option>
+                              <option value="endsWith">で終わる</option>
+                            </select>
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <label className="block text-[11px] text-slate-500 mb-0.5">キーワード</label>
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingDraft.keyword}
+                              onChange={(e) =>
+                                setEditingDraft({ ...editingDraft, keyword: e.target.value })
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                                  e.preventDefault();
+                                  handleSaveEdit();
+                                }
+                              }}
+                              className="w-full py-1.5 px-2 bg-white border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <label className="block text-[11px] text-slate-500 mb-0.5">付与するフラグ</label>
+                            <select
+                              value={editingDraft.applyFlag}
+                              onChange={(e) =>
+                                setEditingDraft({ ...editingDraft, applyFlag: e.target.value })
+                              }
+                              className="w-full py-1.5 px-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold text-indigo-700"
+                            >
+                              {customFlags
+                                .filter((f) => f !== '未設定')
+                                .map((flag) => (
+                                  <option key={flag} value={flag}>
+                                    {flag}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            className="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-white rounded-lg transition-colors cursor-pointer"
+                          >
+                            キャンセル
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveEdit}
+                            disabled={!editingDraft.keyword.trim()}
+                            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            更新する
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={rule.id}
+                      className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 transition-colors ${
+                        rule.enabled
+                          ? 'bg-white border-slate-200'
+                          : 'bg-slate-50 border-slate-200 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEnable(rule.id)}
+                          className="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+                          title={rule.enabled ? '無効にする' : '有効にする'}
+                        >
+                          {rule.enabled ? (
+                            <ToggleRight className="w-5 h-5 text-emerald-600" />
+                          ) : (
+                            <ToggleLeft className="w-5 h-5 text-slate-300" />
+                          )}
+                        </button>
+                        <div className="leading-relaxed break-words">
+                          <span className="font-semibold text-slate-800">
+                            {rule.targetField === 'content'
+                              ? '内容'
+                              : rule.targetField === 'majorCategory'
+                              ? '大項目'
+                              : rule.targetField === 'mediumCategory'
+                              ? '中項目'
+                              : rule.targetField === 'institution'
+                              ? '金融機関'
+                              : 'メモ'}
+                          </span>
+                          <span className="text-slate-400 mx-1">が</span>
+                          <span className="font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                            "{rule.keyword}"
+                          </span>
+                          <span className="text-slate-400 mx-1">
+                            {rule.matchType === 'contains'
+                              ? 'を含む'
+                              : rule.matchType === 'equals'
+                              ? 'と一致'
+                              : rule.matchType === 'startsWith'
+                              ? 'で始まる'
+                              : 'で終わる'}
+                            とき
+                          </span>
+                          <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            → {rule.applyFlag}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveRule(index, -1)}
+                          disabled={index === 0}
+                          className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-25 disabled:hover:bg-transparent rounded transition-colors cursor-pointer disabled:cursor-not-allowed"
+                          title="優先順位を上げる"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveRule(index, 1)}
+                          disabled={index === localRules.length - 1}
+                          className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-25 disabled:hover:bg-transparent rounded transition-colors cursor-pointer disabled:cursor-not-allowed"
+                          title="優先順位を下げる"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(rule)}
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors cursor-pointer"
+                          title="編集"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRule(rule.id)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                          title="削除"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteRule(rule.id)}
-                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                      title="削除"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
