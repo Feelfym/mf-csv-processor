@@ -34,6 +34,38 @@ import { NotebookLmExportModal } from './components/NotebookLmExportModal';
 import { AddRecordModal } from './components/AddRecordModal';
 import { CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { isAnyModalOpen } from './hooks/useModal';
+import {
+  isFirebaseConfigured,
+  signInWithGoogle,
+  signOutGoogle,
+  subscribeAuthState,
+  FirebaseUser,
+} from './utils/firebase';
+import {
+  fetchCloudMeta,
+  loadCloudData,
+  saveCloudData,
+  clearCloudSyncCache,
+  getDeviceId,
+} from './utils/cloudSync';
+
+const LAST_CLOUD_SYNC_KEY = 'mf_processor_last_cloud_sync_at';
+
+const getLastCloudSyncAt = (): number => {
+  try {
+    return Number(localStorage.getItem(LAST_CLOUD_SYNC_KEY) || '0') || 0;
+  } catch {
+    return 0;
+  }
+};
+
+const setLastCloudSyncAt = (ts: number): void => {
+  try {
+    localStorage.setItem(LAST_CLOUD_SYNC_KEY, String(ts));
+  } catch {
+    // ignore
+  }
+};
 
 /** 履歴の最大保持数 */
 const MAX_HISTORY = 50;
@@ -81,9 +113,25 @@ export function App() {
   const [isNotebookLmModalOpen, setIsNotebookLmModalOpen] = useState(false);
   const [isAddRecordOpen, setIsAddRecordOpen] = useState(false);
 
-  // 通信状態・ブラウザ保存エラー状態
+  // 通信状態・ブラウザ保存エラー状態・クラウド同期状態
   const [isSaving, setIsSaving] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const [cloudUser, setCloudUser] = useState<FirebaseUser | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const cloudUserRef = useRef<FirebaseUser | null>(null);
+  cloudUserRef.current = cloudUser;
+  const rulesRef = useRef(rules);
+  rulesRef.current = rules;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const selectedPeriodRef = useRef(selectedPeriod);
+  selectedPeriodRef.current = selectedPeriod;
+  const isCloudReadyRef = useRef(false);
+  const skipNextCloudPushRef = useRef(false);
+  const lastCloudCheckAtRef = useRef(0);
+  const cloudSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 初回マウントフラグ（初回ロード時の上書き保存防止）
   const isInitialMount = useRef(true);
@@ -216,9 +264,12 @@ export function App() {
 
     const savedSession = loadStoredData();
     if (savedSession && savedSession.records && savedSession.records.length > 0) {
+      recordsRef.current = savedSession.records;
+      fileNameRef.current = savedSession.fileName;
       setRecords(savedSession.records);
       setFileName(savedSession.fileName);
       if (savedSession.selectedPeriod) {
+        selectedPeriodRef.current = savedSession.selectedPeriod;
         setSelectedPeriod(savedSession.selectedPeriod);
       }
       // 旧バージョンで保存されていた巨大な rawCsvContent が残っている場合はスリム化して再保存
@@ -278,6 +329,261 @@ export function App() {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, [records, fileName, selectedPeriod, flushPendingSave]);
+
+  // ===== Firebase クラウド同期 =====
+  const applyLoadedCloudData = useCallback(
+    (loaded: Awaited<ReturnType<typeof loadCloudData>>) => {
+      if (!loaded) return;
+      skipNextCloudPushRef.current = true;
+      recordsRef.current = loaded.records;
+      fileNameRef.current = loaded.fileName;
+      rulesRef.current = loaded.rules;
+      settingsRef.current = loaded.settings || settingsRef.current;
+      selectedPeriodRef.current = loaded.selectedPeriod || 'ALL';
+
+      setRecords(loaded.records);
+      setFileName(loaded.fileName);
+      if (loaded.rules) {
+        setRules(loaded.rules);
+        saveRules(loaded.rules);
+      }
+      if (loaded.settings) {
+        setSettings(loaded.settings);
+        saveSettings(loaded.settings);
+      }
+      setSelectedPeriod(loaded.selectedPeriod || 'ALL');
+      setLastCloudSyncAt(loaded.updatedAt);
+    },
+    []
+  );
+
+  const pushToCloud = useCallback(
+    async (uid: string, forceAll = false) => {
+      setSyncStatus('syncing');
+      setSyncError(null);
+      try {
+        const res = await saveCloudData(
+          uid,
+          {
+            records: recordsRef.current,
+            rules: rulesRef.current,
+            settings: settingsRef.current,
+            fileName: fileNameRef.current,
+            selectedPeriod: selectedPeriodRef.current,
+          },
+          { forceAll }
+        );
+        setLastCloudSyncAt(res.updatedAt);
+        setSyncStatus('synced');
+      } catch (err: any) {
+        console.error('Cloud sync save failed:', err);
+        setSyncStatus('error');
+        setSyncError(err?.message || 'クラウド同期に失敗しました');
+      }
+    },
+    []
+  );
+
+  // Firebase Auth のログイン状態を監視し、ログイン時に初回同期を実行
+  useEffect(() => {
+    if (!isFirebaseConfigured) return;
+
+    const unsubscribe = subscribeAuthState(async (user) => {
+      setCloudUser(user);
+      cloudUserRef.current = user;
+
+      if (!user) {
+        isCloudReadyRef.current = false;
+        setSyncStatus('idle');
+        setSyncError(null);
+        clearCloudSyncCache();
+        return;
+      }
+
+      isCloudReadyRef.current = false;
+      setSyncStatus('syncing');
+      setSyncError(null);
+
+      try {
+        const cloudMeta = await fetchCloudMeta(user.uid);
+        const localRecords =
+          recordsRef.current.length > 0
+            ? recordsRef.current
+            : loadStoredData()?.records || [];
+        const lastSyncAt = getLastCloudSyncAt();
+        const myDeviceId = getDeviceId();
+
+        if (!cloudMeta || cloudMeta.recordCount === 0) {
+          // クラウドが空：ローカルにデータがあれば初回アップロード
+          if (localRecords.length > 0) {
+            await pushToCloud(user.uid, true);
+            showToast('success', `ローカルの ${localRecords.length} 件をクラウドへ初回同期しました`);
+          } else {
+            setSyncStatus('synced');
+          }
+        } else if (localRecords.length === 0) {
+          // ローカルが空 & クラウドあり（2台目ログインなど）：自動でダウンロード
+          const loaded = await loadCloudData(user.uid);
+          if (loaded) {
+            applyLoadedCloudData(loaded);
+            showToast('success', `クラウドから ${loaded.records.length} 件のデータを同期しました`);
+          }
+          setSyncStatus('synced');
+        } else if (cloudMeta.updatedAt > lastSyncAt) {
+          // クラウド側に新しいデータがある
+          const shouldDownload =
+            lastSyncAt > 0 && cloudMeta.deviceId !== myDeviceId
+              ? true
+              : confirm(
+                  `クラウド上にデータ（${cloudMeta.recordCount} 件）が見つかりました。\n\n` +
+                    `「OK」: クラウドのデータで現在の端末（${localRecords.length} 件）を上書き\n` +
+                    `「キャンセル」: 現在の端末のデータでクラウドを上書き`
+                );
+
+          if (shouldDownload) {
+            const loaded = await loadCloudData(user.uid);
+            if (loaded) {
+              applyLoadedCloudData(loaded);
+              showToast('success', `クラウドから最新データ（${loaded.records.length} 件）を同期しました`);
+            }
+            setSyncStatus('synced');
+          } else {
+            await pushToCloud(user.uid, true);
+            showToast('success', `この端末のデータ（${localRecords.length} 件）でクラウドを更新しました`);
+          }
+        } else {
+          // すでに同期済み（同一端末リロード等）：差分比較キャッシュだけ読み込んでおく
+          const loaded = await loadCloudData(user.uid);
+          if (loaded && loaded.updatedAt > lastSyncAt) {
+            applyLoadedCloudData(loaded);
+          }
+          setSyncStatus('synced');
+        }
+
+        isCloudReadyRef.current = true;
+        lastCloudCheckAtRef.current = Date.now();
+      } catch (err: any) {
+        console.error('Initial cloud sync failed:', err);
+        setSyncStatus('error');
+        setSyncError(err?.message || 'クラウドとの接続に失敗しました');
+        showToast('error', `クラウド同期エラー: ${err?.message || '接続に失敗しました'}`);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [applyLoadedCloudData, pushToCloud]);
+
+  // ログイン中のデータ変更を 1.5 秒デバウンスで自動差分保存
+  useEffect(() => {
+    const user = cloudUserRef.current;
+    if (!user || !isCloudReadyRef.current) return;
+
+    if (skipNextCloudPushRef.current) {
+      skipNextCloudPushRef.current = false;
+      return;
+    }
+
+    if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
+    cloudSaveTimerRef.current = setTimeout(() => {
+      const currentUser = cloudUserRef.current;
+      if (currentUser && isCloudReadyRef.current) {
+        pushToCloud(currentUser.uid, false);
+      }
+    }, 1500);
+
+    return () => {
+      if (cloudSaveTimerRef.current) clearTimeout(cloudSaveTimerRef.current);
+    };
+  }, [records, rules, settings, fileName, selectedPeriod, pushToCloud]);
+
+  // タブ復帰時に別端末からの更新がないか軽量チェック（1 Read）＋ 非表示時に未送信分を即時保存
+  useEffect(() => {
+    if (!isFirebaseConfigured) return;
+
+    const handleVisibilityCloud = async () => {
+      const user = cloudUserRef.current;
+      if (!user || !isCloudReadyRef.current) return;
+
+      if (document.visibilityState === 'hidden') {
+        if (cloudSaveTimerRef.current) {
+          clearTimeout(cloudSaveTimerRef.current);
+          cloudSaveTimerRef.current = null;
+          pushToCloud(user.uid, false);
+        }
+        return;
+      }
+
+      if (document.visibilityState === 'visible') {
+        if (Date.now() - lastCloudCheckAtRef.current < 10000) return;
+        lastCloudCheckAtRef.current = Date.now();
+        try {
+          const meta = await fetchCloudMeta(user.uid);
+          if (meta && meta.updatedAt > getLastCloudSyncAt() && meta.deviceId !== getDeviceId()) {
+            setSyncStatus('syncing');
+            const loaded = await loadCloudData(user.uid);
+            if (loaded) {
+              applyLoadedCloudData(loaded);
+              showToast('info', `別端末の変更（${loaded.records.length} 件）を自動同期しました`);
+            }
+            setSyncStatus('synced');
+          }
+        } catch (err) {
+          console.warn('Background cloud check failed:', err);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityCloud);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityCloud);
+  }, [applyLoadedCloudData, pushToCloud]);
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      if (err?.code === 'auth/popup-closed-by-user') return;
+      showToast('error', `Googleログインに失敗しました: ${err?.message || err}`);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    try {
+      if (cloudSaveTimerRef.current && cloudUserRef.current) {
+        clearTimeout(cloudSaveTimerRef.current);
+        cloudSaveTimerRef.current = null;
+        await pushToCloud(cloudUserRef.current.uid, false);
+      }
+      await signOutGoogle();
+      showToast('info', 'ログアウトしました（この端末のデータはそのまま残ります）');
+    } catch (err: any) {
+      showToast('error', `ログアウトに失敗しました: ${err?.message || err}`);
+    }
+  };
+
+  const handleManualSync = async () => {
+    const user = cloudUserRef.current;
+    if (!user) return;
+    setSyncStatus('syncing');
+    setSyncError(null);
+    try {
+      const meta = await fetchCloudMeta(user.uid);
+      if (meta && meta.updatedAt > getLastCloudSyncAt() && meta.deviceId !== getDeviceId()) {
+        const loaded = await loadCloudData(user.uid);
+        if (loaded) {
+          applyLoadedCloudData(loaded);
+          showToast('success', `クラウドの最新データ（${loaded.records.length} 件）を取得しました`);
+        }
+        setSyncStatus('synced');
+      } else {
+        await pushToCloud(user.uid, false);
+        showToast('success', 'クラウドと同期しました');
+      }
+    } catch (err: any) {
+      setSyncStatus('error');
+      setSyncError(err?.message || '同期に失敗しました');
+      showToast('error', `同期に失敗しました: ${err?.message || err}`);
+    }
+  };
 
   // タブを閉じる・バックグラウンド移行時に未保存分を即時フラッシュ
   useEffect(() => {
@@ -782,6 +1088,21 @@ export function App() {
         onRedo={handleRedo}
         canUndo={historyState.canUndo}
         canRedo={historyState.canRedo}
+        isCloudEnabled={isFirebaseConfigured}
+        cloudUser={
+          cloudUser
+            ? {
+                displayName: cloudUser.displayName,
+                email: cloudUser.email,
+                photoURL: cloudUser.photoURL,
+              }
+            : null
+        }
+        syncStatus={syncStatus}
+        syncError={syncError}
+        onGoogleLogin={handleGoogleLogin}
+        onGoogleLogout={handleGoogleLogout}
+        onManualSync={handleManualSync}
       />
 
       {/* ブラウザ保存失敗時の警告バナー */}
@@ -809,6 +1130,9 @@ export function App() {
           <FileUploader
             onDataLoaded={handleDataLoaded}
             onRestoreBackup={handleRestoreFullBackup}
+            isCloudEnabled={isFirebaseConfigured}
+            isLoggedIn={Boolean(cloudUser)}
+            onGoogleLogin={handleGoogleLogin}
           />
         ) : (
           <div className="space-y-6 animate-fadeIn">

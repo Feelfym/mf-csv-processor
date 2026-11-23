@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, Database } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, Database, Cloud } from 'lucide-react';
 import { decodeCsvBuffer, parseMoneyForwardCsv } from '../utils/csvParser';
 import { MoneyForwardRecord, AppSettings, AutoRule } from '../types';
 
@@ -12,9 +12,18 @@ interface FileUploaderProps {
     fileName: string | null;
     selectedPeriod: string;
   }) => void;
+  isCloudEnabled?: boolean;
+  isLoggedIn?: boolean;
+  onGoogleLogin?: () => void;
 }
 
-export const FileUploader: React.FC<FileUploaderProps> = ({ onDataLoaded, onRestoreBackup }) => {
+export const FileUploader: React.FC<FileUploaderProps> = ({
+  onDataLoaded,
+  onRestoreBackup,
+  isCloudEnabled = false,
+  isLoggedIn = false,
+  onGoogleLogin,
+}) => {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -190,36 +199,49 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onDataLoaded, onRest
         </div>
       )}
 
-      {/* サブアクション（バックアップ復元 & サンプルデータ） */}
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-4 text-xs">
-        {onRestoreBackup && (
-          <>
-            <input
-              ref={backupFileInputRef}
-              type="file"
-              accept=".json,application/json"
-              onChange={handleBackupFileInputChange}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => backupFileInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
-            >
-              <Database className="w-3.5 h-3.5 text-indigo-600" />
-              バックアップJSONから復元
-            </button>
-          </>
+      {/* サブアクション（Google同期ログイン & バックアップ復元 & サンプルデータ） */}
+      <div className="mt-6 sm:mt-8 flex flex-col items-center gap-4 text-xs">
+        {isCloudEnabled && !isLoggedIn && onGoogleLogin && (
+          <button
+            type="button"
+            onClick={onGoogleLogin}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white hover:bg-slate-50 text-slate-800 font-bold text-sm rounded-xl border border-slate-300 shadow-sm transition-all cursor-pointer active:scale-[0.98]"
+          >
+            <Cloud className="w-4 h-4 text-indigo-600" />
+            <span>Google でログインしてクラウドから同期</span>
+          </button>
         )}
 
-        <button
-          type="button"
-          onClick={loadSampleData}
-          className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900 font-medium py-1.5 px-3 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer border border-slate-200"
-        >
-          <FileText className="w-3.5 h-3.5 text-slate-500" />
-          サンプルデータで動作を試す
-        </button>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {onRestoreBackup && (
+            <>
+              <input
+                ref={backupFileInputRef}
+                type="file"
+                accept=".json,application/json"
+                onChange={handleBackupFileInputChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => backupFileInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+              >
+                <Database className="w-3.5 h-3.5 text-indigo-600" />
+                バックアップJSONから復元
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={loadSampleData}
+            className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900 font-medium py-1.5 px-3 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer border border-slate-200"
+          >
+            <FileText className="w-3.5 h-3.5 text-slate-500" />
+            サンプルデータで動作を試す
+          </button>
+        </div>
       </div>
     </div>
   );
